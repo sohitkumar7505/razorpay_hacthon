@@ -21,6 +21,32 @@ export function parseShoppingRequest(message) {
   return { query, ...(maxPrice === undefined ? {} : { maxPrice }) };
 }
 
+function parseShoppingTurn(message) {
+  const normalized = message.toLocaleLowerCase("en-IN").replace(/[-_]/g, " ");
+  const parsed = parseShoppingRequest(message);
+  const turn = {};
+  if (/\b(skin\s*care|skin\s*cream|skincream|face\s*care)\b/.test(normalized)) turn.category = "skincare";
+  if (/\bcream|moisturi[sz]er\b/.test(normalized)) turn.productType = "cream";
+  else if (/\bserum\b/.test(normalized)) turn.productType = "serum";
+  else if (/\bcleanser|face\s*wash\b/.test(normalized)) turn.productType = "cleanser";
+  else if (/\b(gift\s*set|bundle)\b/.test(normalized)) turn.productType = "set";
+  if (/\bdaily\s*(use|wear|routine)?\b|\bevery\s*day\b/.test(normalized)) turn.useCase = "daily-use";
+  else if (/\bgift|present\b/.test(normalized)) turn.useCase = "gift";
+  else if (/\bnight|overnight\b/.test(normalized)) turn.useCase = "night";
+  else if (/\bsensitive\b/.test(normalized)) turn.useCase = "sensitive";
+  else if (/\bhydrat|dry\s*skin\b/.test(normalized)) turn.useCase = "hydrating";
+  if (parsed.maxPrice !== undefined) turn.maxPrice = parsed.maxPrice;
+  return turn;
+}
+
+function productText(product) {
+  return [product.name, product.description, product.category, ...product.tags].join(" ").toLocaleLowerCase("en-IN");
+}
+
+function describeContext(context) {
+  return [context.category, context.productType, context.useCase?.replace("-", " "), context.maxPrice ? `under ₹${context.maxPrice}` : null].filter(Boolean).join(", ");
+}
+
 function clone(value) {
   return structuredClone(value);
 }
@@ -60,7 +86,8 @@ export class CommerceService {
     }
     const session = {
       id: randomUUID(), spendingLimit, items: [], messages: [], checkout: null,
-      recommendationState: { fingerprint: null, shown: [], decisions: {} }
+      recommendationState: { fingerprint: null, shown: [], decisions: {} },
+      shoppingContext: {}
     };
     this.#sessions.set(session.id, session);
     this.#record("session.created", { sessionId: session.id, spendingLimit });
@@ -69,22 +96,54 @@ export class CommerceService {
 
   getSession(id) {
     const session = this.#session(id);
-    return { id: session.id, spendingLimit: session.spendingLimit, messages: clone(session.messages), cart: this.#cart(session), checkout: clone(session.checkout) };
+    return { id: session.id, spendingLimit: session.spendingLimit, messages: clone(session.messages), shoppingContext: clone(session.shoppingContext), cart: this.#cart(session), checkout: clone(session.checkout) };
+  }
+
+  previewShoppingContext(sessionId, message) {
+    const session = this.#session(sessionId);
+    const turn = parseShoppingTurn(message);
+    const context = { ...session.shoppingContext, ...turn };
+    if (context.maxPrice === undefined && session.spendingLimit !== undefined) context.maxPrice = session.spendingLimit;
+    else if (context.maxPrice !== undefined && session.spendingLimit !== undefined) context.maxPrice = Math.min(context.maxPrice, session.spendingLimit);
+    return context;
+  }
+
+  #contextualProducts(context, { relaxUseCase = false } = {}) {
+    const useCaseTerms = {
+      "daily-use": ["daily-use", "daily use", "everyday"],
+      gift: ["gift", "gifting"],
+      night: ["night", "overnight"],
+      sensitive: ["sensitive", "fragrance-free"],
+      hydrating: ["hydrat", "dry skin"]
+    };
+    return this.catalogue.list()
+      .filter((product) => product.inventory > 0)
+      .filter((product) => context.maxPrice === undefined || product.price <= context.maxPrice)
+      .filter((product) => !context.category || product.category === context.category)
+      .filter((product) => !context.productType || productText(product).includes(context.productType))
+      .filter((product) => relaxUseCase || !context.useCase || useCaseTerms[context.useCase].some((term) => productText(product).includes(term)))
+      .sort((a, b) => a.price - b.price || a.name.localeCompare(b.name))
+      .slice(0, 4);
   }
 
   message(sessionId, message) {
     const session = this.#session(sessionId);
-    const parsed = parseShoppingRequest(message);
-    const effectiveMaxPrice = parsed.maxPrice === undefined
-      ? session.spendingLimit
-      : Math.min(parsed.maxPrice, session.spendingLimit ?? Number.POSITIVE_INFINITY);
-    const suggestions = this.catalogue.search({ query: parsed.query, maxPrice: effectiveMaxPrice, inStock: true });
+    const hadContext = Object.keys(session.shoppingContext).length > 0;
+    const interpreted = this.previewShoppingContext(sessionId, message);
+    session.shoppingContext = interpreted;
+    let suggestions = this.#contextualProducts(interpreted);
+    let relaxed = false;
+    if (!suggestions.length && interpreted.useCase) {
+      suggestions = this.#contextualProducts(interpreted, { relaxUseCase: true });
+      relaxed = suggestions.length > 0;
+    }
+    const remembered = describeContext(interpreted);
     const reply = suggestions.length
-      ? `I found ${suggestions.length} verified product${suggestions.length === 1 ? "" : "s"} from the merchant catalogue. Prices and stock were checked just now.`
-      : "I couldn't find a verified in-stock product within those constraints. Try a broader request or a different budget.";
+      ? `${hadContext ? `I remembered your preferences (${remembered}). ` : ""}${relaxed ? "I don't have an exact use-case match, but these are the closest verified options" : `I found ${suggestions.length} verified option${suggestions.length === 1 ? "" : "s"}`}. Prices and stock were checked just now.`
+      : `I remembered your preferences (${remembered}), but nothing in stock matches them within the current budget. Tell me which requirement you would like to change.`;
     session.messages.push({ role: "user", content: message }, { role: "assistant", content: reply });
-    this.#record("conversation.message", { sessionId, parsed, suggestionIds: suggestions.map(({ id }) => id) });
-    return { reply, suggestions, interpreted: parsed };
+    this.#record("conversation.message", { sessionId, interpreted, suggestionIds: suggestions.map(({ id }) => id), memoryUsed: hadContext });
+    return { reply, suggestions, interpreted, memoryUsed: hadContext };
   }
 
   addToCart(sessionId, productId, quantity = 1, { preserveRecommendationState = false } = {}) {

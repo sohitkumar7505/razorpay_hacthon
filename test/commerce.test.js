@@ -28,6 +28,44 @@ test("conversation returns only authoritative products within the stated budget"
   assert.match(response.reply, /verified/i);
 });
 
+test("remembers product context and refines it across shopkeeper-style follow-ups", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000 });
+  const first = service.message(session.id, "Show me a skin cream under ₹1,500");
+  assert.ok(first.suggestions.some(({ id }) => id === "daily-cream-01"));
+  const refined = service.message(session.id, "I need it for daily use");
+  assert.deepEqual(refined.interpreted, {
+    category: "skincare",
+    productType: "cream",
+    useCase: "daily-use",
+    maxPrice: 1500
+  });
+  assert.deepEqual(refined.suggestions.map(({ id }) => id), ["daily-cream-01"]);
+  assert.match(refined.reply, /remember/i);
+});
+
+test("a budget-only follow-up preserves the remembered product requirements", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000 });
+  service.message(session.id, "I want a skincare cream for daily use");
+  const refined = service.message(session.id, "keep it under ₹1,000");
+  assert.equal(refined.interpreted.category, "skincare");
+  assert.equal(refined.interpreted.productType, "cream");
+  assert.equal(refined.interpreted.useCase, "daily-use");
+  assert.equal(refined.interpreted.maxPrice, 1000);
+  assert.deepEqual(refined.suggestions.map(({ id }) => id), ["daily-cream-01"]);
+});
+
+test("shopping memory is isolated between customer sessions", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const first = service.createSession();
+  const second = service.createSession();
+  service.message(first.id, "I want a skincare cream for daily use");
+  const unrelated = service.message(second.id, "show me a gift");
+  assert.equal(unrelated.interpreted.productType, undefined);
+  assert.equal(unrelated.interpreted.useCase, "gift");
+});
+
 test("cart totals are calculated from catalogue prices and enforce spending limits", () => {
   const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
   const session = service.createSession({ spendingLimit: 1500 });

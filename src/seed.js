@@ -76,5 +76,18 @@ export const seedProducts = [
     complements: ["serum-01", "cream-01", "cleanser-01"],
     shippingDays: 2,
     returnable: false
+  },
+  {
+    id: "daily-cream-01",
+    name: "Daily Barrier Face Cream",
+    description: "Lightweight skincare cream and moisturiser for comfortable daily use",
+    category: "skincare",
+    price: 899,
+    currency: "INR",
+    inventory: 18,
+    tags: ["cream", "moisturiser", "daily-use", "lightweight"],
+    complements: ["serum-01", "face-mask-01"],
+    shippingDays: 2,
+    returnable: true
   }
 ];

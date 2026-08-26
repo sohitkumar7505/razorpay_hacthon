@@ -22,6 +22,8 @@ The backend uses real compiled LangGraph `StateGraph` workflows rather than fron
 
 `OPENAI_API_KEY` is optional. When configured, only the final shopping response-agent uses the model, grounded exclusively in products already returned by deterministic catalogue tools. Authentication, quota, or network failures fall back to the deterministic response. Prices, inventory, cart totals, recommendations, campaign policies, approvals, payment creation, and payment verification never depend on the LLM.
 
+The shopping workflow keeps structured, per-session conversational memory. Follow-ups such as “for daily use,” “make it a cream,” or “keep it under ₹1,000” update only that preference while retaining the earlier category and constraints. Remembered preferences are visible as chips on the customer page and are never shared between customer sessions.
+
 ## Run locally
 
 Requires Node.js 20 or newer. There are currently no third-party dependencies.

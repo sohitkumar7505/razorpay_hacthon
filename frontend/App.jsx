@@ -204,6 +204,7 @@ export default function App() {
   const [message, setMessage] = useState("I need a skincare gift under ₹2,000");
   const [conversation, setConversation] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
+  const [rememberedContext, setRememberedContext] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [metrics, setMetrics] = useState({ impressions: 0, accepted: 0, rejected: 0, incrementalRevenue: 0, acceptanceRate: 0 });
   const [notice, setNotice] = useState("");
@@ -234,7 +235,7 @@ export default function App() {
     setMessage(""); setBusy(true); setNotice("");
     try {
       const body = await api(`/api/sessions/${session.id}/messages`, { method: "POST", body: JSON.stringify({ message: userMessage }) });
-      setConversation((current) => [...current, { role: "assistant", content: body.reply }]); setSuggestions(body.suggestions);
+      setConversation((current) => [...current, { role: "assistant", content: body.reply }]); setSuggestions(body.suggestions); setRememberedContext(body.interpreted);
     } catch (error) { setNotice(error.message); } finally { setBusy(false); }
   }
 
@@ -332,6 +333,7 @@ export default function App() {
                 {!conversation.length && <p className="max-w-lg rounded-2xl rounded-bl-sm bg-slate-800 px-4 py-3 text-sm leading-6 text-slate-300">Tell me what you need and your budget. I will only suggest verified, in-stock products.</p>}
                 {conversation.map((entry, index) => <p key={index} className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${entry.role === "user" ? "ml-auto rounded-br-sm bg-blue-600 text-white" : "rounded-bl-sm bg-slate-800 text-slate-300"}`}>{entry.content}</p>)}
               </div>
+              {rememberedContext && <div aria-label="Remembered preferences" className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-cyan-400/5 px-4 py-3"><span className="text-xs font-black text-cyan-300">REMEMBERING</span>{rememberedContext.category && <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">{rememberedContext.category}</span>}{rememberedContext.productType && <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">{rememberedContext.productType}</span>}{rememberedContext.useCase && <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">{rememberedContext.useCase.replace("-", " ")}</span>}{rememberedContext.maxPrice && <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">under {formatMoney(rememberedContext.maxPrice)}</span>}</div>}
               <form onSubmit={sendMessage} className="flex gap-3 border-t border-white/10 p-4"><label className="sr-only" htmlFor="agent-message">Shopping request</label><input id="agent-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="I need a skincare gift under ₹2,000" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-400" /><button disabled={!session || busy} className="rounded-xl bg-blue-600 px-5 font-extrabold transition hover:bg-blue-500 disabled:opacity-50">{busy ? "Working…" : "Ask agent"}</button></form>
             </section>
             {suggestions.length > 0 && <section aria-labelledby="suggestions-heading"><div className="mb-4 flex items-center justify-between"><h2 id="suggestions-heading" className="text-xl font-extrabold">Agent suggestions</h2><span className="text-sm text-slate-500">Verified now</span></div><div className="grid gap-4 md:grid-cols-2">{suggestions.map((product) => <ProductCard key={product.id} product={product} onAdd={addToCart} />)}</div></section>}

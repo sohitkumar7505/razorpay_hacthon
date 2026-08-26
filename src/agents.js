@@ -3,7 +3,6 @@ import { END, START, StateGraph, StateSchema } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
 import { ValidationError } from "./catalogue.js";
-import { parseShoppingRequest } from "./commerce.js";
 
 const AgentState = new StateSchema({
   runId: z.string(),
@@ -102,7 +101,7 @@ export class AgentRuntime {
 
   #shoppingGraph() {
     return this.#linearGraph([
-      ["intent-agent", this.#node("intent-agent", async ({ input }) => ({ interpreted: parseShoppingRequest(input.message) }))],
+      ["intent-agent", this.#node("intent-agent", async ({ sessionId, input }) => ({ interpreted: this.commerce.previewShoppingContext(sessionId, input.message) }))],
       ["catalogue-agent", this.#node("catalogue-agent", async ({ sessionId, input }) => ({ result: this.commerce.message(sessionId, input.message) }))],
       ["guardrail-agent", this.#node("guardrail-agent", async ({ result, interpreted }) => {
         if (result.suggestions.some(({ inventory }) => inventory < 1)) throw new ValidationError("agent suggested unavailable inventory");
