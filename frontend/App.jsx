@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { buildRazorpayOptions, buildSearchParams, formatMoney } from "./catalogue-ui.js";
+import { buildRazorpayOptions, buildSearchParams, formatMoney, getPageFromPath } from "./catalogue-ui.js";
 
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: options.body ? { "content-type": "application/json", ...options.headers } : options.headers });
@@ -196,6 +196,7 @@ function AgentOperations() {
 }
 
 export default function App() {
+  const page = getPageFromPath(window.location.pathname);
   const [filters, setFilters] = useState({ query: "", maxPrice: "", inStock: true });
   const [products, setProducts] = useState([]);
   const [status, setStatus] = useState("Loading catalogue…");
@@ -220,9 +221,10 @@ export default function App() {
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
+    if (page !== "customer") return;
     search(filters);
     api("/api/sessions", { method: "POST", body: JSON.stringify({ spendingLimit: 2000 }) }).then(setSession).catch((error) => setNotice(error.message));
-  }, [search]);
+  }, [page, search]);
 
   async function sendMessage(event) {
     event.preventDefault();
@@ -308,14 +310,21 @@ export default function App() {
     <div className="min-h-screen bg-[#090b10] text-slate-50 selection:bg-blue-500/40">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_80%_0%,rgba(55,85,150,.45),transparent_34rem)]" />
       <div className="relative mx-auto w-[min(1180px,calc(100%-36px))]">
+        <nav aria-label="Product areas" className="flex items-center justify-between border-b border-white/10 py-4">
+          <a href="/customer" className="text-sm font-black tracking-[0.15em] text-blue-300">AGENTIC COMMERCE</a>
+          <div className="flex rounded-xl border border-white/10 bg-slate-900/80 p-1">
+            <a href="/customer" aria-current={page === "customer" ? "page" : undefined} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${page === "customer" ? "bg-blue-500 text-white" : "text-slate-400 hover:text-white"}`}>Customer Store</a>
+            <a href="/merchant" aria-current={page === "merchant" ? "page" : undefined} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${page === "merchant" ? "bg-amber-300 text-amber-950" : "text-slate-400 hover:text-white"}`}>Merchant Console</a>
+          </div>
+        </nav>
         <header className="pb-12 pt-14 md:pt-20">
-          <div className="flex flex-wrap items-center gap-3"><p className="text-xs font-black tracking-[0.2em] text-blue-400">RAZORPAY BUILDATHON</p><span className="rounded-full border border-amber-400/30 px-3 py-1 text-[11px] font-bold text-amber-200">PHASE 4 · COMPLETE AGENTIC COMMERCE</span></div>
-          <h1 className="mt-4 max-w-4xl text-5xl font-black leading-[.94] tracking-[-.055em] sm:text-7xl md:text-8xl">Shop through a guarded agent.</h1>
-          <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-400">Describe what you need. The agent interprets constraints, searches verified merchant records, and creates a test order only after you approve the exact total.</p>
+          <div className="flex flex-wrap items-center gap-3"><p className={`text-xs font-black tracking-[0.2em] ${page === "customer" ? "text-blue-400" : "text-amber-300"}`}>RAZORPAY BUILDATHON</p><span className="rounded-full border border-white/15 px-3 py-1 text-[11px] font-bold text-slate-300">{page === "customer" ? "CUSTOMER EXPERIENCE" : "MERCHANT OPERATIONS"}</span></div>
+          <h1 className="mt-4 max-w-5xl text-5xl font-black leading-[.94] tracking-[-.055em] sm:text-7xl md:text-8xl">{page === "customer" ? "Shop through a guarded agent." : "Operate growth with visible agents."}</h1>
+          <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-400">{page === "customer" ? "Discover verified products, receive budget-safe recommendations, manage your cart, and complete a protected Razorpay test checkout." : "Inspect LangGraph execution, identify revenue gaps, approve bounded campaigns, monitor performance, and verify automatic stop-loss behavior."}</p>
         </header>
-        <AgentOperations />
-        {notice && <div role="status" className="mb-5 rounded-xl border border-blue-400/20 bg-blue-400/10 px-4 py-3 text-sm text-blue-100">{notice}</div>}
-        <main className="grid gap-6 lg:grid-cols-[1fr_340px]">
+        {page === "merchant" && <AgentOperations />}
+        {page === "customer" && notice && <div role="status" className="mb-5 rounded-xl border border-blue-400/20 bg-blue-400/10 px-4 py-3 text-sm text-blue-100">{notice}</div>}
+        {page === "customer" && <main className="grid gap-6 lg:grid-cols-[1fr_340px]">
           <div className="space-y-6">
             <section aria-labelledby="agent-heading" className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 shadow-2xl shadow-black/30 backdrop-blur">
               <div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><h2 id="agent-heading" className="font-extrabold">Shopping agent</h2><p className="text-xs text-slate-500">Bounded by a {formatMoney(session?.spendingLimit ?? 2000)} spending limit</p></div><span className="text-xs font-bold text-emerald-400">● Catalogue connected</span></div>
@@ -334,9 +343,9 @@ export default function App() {
             </details>
           </div>
           <Cart session={session} busy={busy} onRemove={removeFromCart} onCheckout={checkout} />
-        </main>
-        <CampaignControlCentre />
-        <footer className="flex flex-wrap justify-between gap-3 py-12 text-sm text-slate-600"><span>Every search, cart, recommendation, campaign approval and payment event is audited.</span><span>Razorpay test mode · Simulated campaign delivery</span></footer>
+        </main>}
+        {page === "merchant" && <CampaignControlCentre />}
+        <footer className="flex flex-wrap justify-between gap-3 py-12 text-sm text-slate-600"><span>{page === "customer" ? "Verified catalogue · Guarded cart · Explainable recommendations" : "Observable LangGraph runs · Human approval · Automatic stop-loss"}</span><span>{page === "customer" ? "Razorpay test mode" : "Simulated campaign delivery"}</span></footer>
       </div>
     </div>
   );

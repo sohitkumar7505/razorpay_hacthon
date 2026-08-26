@@ -28,3 +28,7 @@ export function buildRazorpayOptions(paymentOrder, handler, onDismiss) {
     theme: { color: "#2563eb" }
   };
 }
+
+export function getPageFromPath(pathname) {
+  return pathname === "/merchant" ? "merchant" : "customer";
+}

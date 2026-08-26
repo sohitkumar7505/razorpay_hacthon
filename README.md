@@ -2,6 +2,13 @@
 
 Phase 4 completes the incremental Razorpay Buildathon roadmap. It combines the authoritative catalogue, conversational checkout, and explainable recommendations with a campaign orchestrator that detects measured revenue gaps, enforces merchant policies, requires human approval, monitors performance, and triggers stop-loss automatically.
 
+## Product surfaces
+
+- `/customer` — conversational shopping, verified catalogue, recommendations, guarded cart, and Razorpay checkout.
+- `/merchant` — live LangGraph operations, revenue opportunities, campaign proposals, approval, monitoring, and stop-loss.
+
+Both pages use the same Node.js backend. Customer activity is intentionally visible in the merchant Agent Operations panel, while merchant controls never appear in the customer experience.
+
 ## LangGraph agents
 
 The backend uses real compiled LangGraph `StateGraph` workflows rather than frontend-only agent labels:
@@ -26,7 +33,7 @@ npm run build
 npm start
 ```
 
-Open <http://localhost:3000>.
+Open <http://localhost:3000/customer> for the store or <http://localhost:3000/merchant> for merchant operations.
 
 For development, run `npm run dev`. Vite serves React on <http://localhost:5173> and proxies `/api` requests to the Node server on port 3000.
 

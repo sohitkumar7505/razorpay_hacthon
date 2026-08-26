@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildRazorpayOptions, buildSearchParams, formatMoney } from "../frontend/catalogue-ui.js";
+import { buildRazorpayOptions, buildSearchParams, formatMoney, getPageFromPath } from "../frontend/catalogue-ui.js";
 
 test("builds bounded catalogue search parameters without empty values", () => {
   const params = buildSearchParams({ query: " skincare gift ", maxPrice: "2000", inStock: true });
@@ -26,4 +26,11 @@ test("builds Razorpay Checkout options from public order fields only", () => {
   assert.equal(options.amount, 79900);
   assert.equal(options.handler, handler);
   assert.equal("keySecret" in options, false);
+});
+
+test("separates customer and merchant routes with a safe customer default", () => {
+  assert.equal(getPageFromPath("/customer"), "customer");
+  assert.equal(getPageFromPath("/merchant"), "merchant");
+  assert.equal(getPageFromPath("/"), "customer");
+  assert.equal(getPageFromPath("/unknown"), "customer");
 });
