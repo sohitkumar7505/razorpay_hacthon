@@ -8,6 +8,7 @@ export const seedProducts = [
     currency: "INR",
     inventory: 24,
     tags: ["gift", "brightening", "vegan"],
+    complements: ["gift-wrap-01", "face-mask-01"],
     shippingDays: 2,
     returnable: true
   },
@@ -20,6 +21,7 @@ export const seedProducts = [
     currency: "INR",
     inventory: 8,
     tags: ["hydrating", "gift"],
+    complements: ["gift-wrap-01", "face-mask-01"],
     shippingDays: 3,
     returnable: true
   },
@@ -32,6 +34,7 @@ export const seedProducts = [
     currency: "INR",
     inventory: 5,
     tags: ["gift", "bundle", "premium"],
+    complements: ["gift-wrap-01"],
     shippingDays: 2,
     returnable: false
   },
@@ -44,7 +47,34 @@ export const seedProducts = [
     currency: "INR",
     inventory: 0,
     tags: ["sensitive", "fragrance-free"],
+    complements: ["face-mask-01"],
     shippingDays: 2,
     returnable: true
+  },
+  {
+    id: "gift-wrap-01",
+    name: "Reusable Gift Wrap",
+    description: "Premium reusable packaging with a handwritten note",
+    category: "accessories",
+    price: 199,
+    currency: "INR",
+    inventory: 40,
+    tags: ["gift", "packaging"],
+    complements: ["serum-01", "cream-01", "gift-set-01"],
+    shippingDays: 0,
+    returnable: false
+  },
+  {
+    id: "face-mask-01",
+    name: "Hydrating Sheet Mask",
+    description: "A single-use hydration add-on for a self-care routine",
+    category: "skincare",
+    price: 299,
+    currency: "INR",
+    inventory: 30,
+    tags: ["hydrating", "add-on"],
+    complements: ["serum-01", "cream-01", "cleanser-01"],
+    shippingDays: 2,
+    returnable: false
   }
 ];

@@ -46,6 +46,26 @@ function Cart({ session, busy, onRemove, onCheckout }) {
   );
 }
 
+function RecommendationPanel({ recommendations, metrics, busy, onDecision }) {
+  if (!recommendations.length && !metrics.impressions) return null;
+  return (
+    <section aria-labelledby="recommendations-heading" className="rounded-2xl border border-violet-400/20 bg-violet-400/5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><p className="text-xs font-black tracking-[0.18em] text-violet-300">PHASE 3 · EXPLAINABLE UPSELL</p><h2 id="recommendations-heading" className="mt-2 text-xl font-extrabold">Complete your purchase</h2><p className="mt-1 text-sm text-slate-400">Compatible, in stock, and already checked against your remaining budget.</p></div>
+        <div className="grid grid-cols-3 gap-4 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-center"><Metric label="Shown" value={metrics.impressions} /><Metric label="Accepted" value={metrics.accepted} /><Metric label="Uplift" value={formatMoney(metrics.incrementalRevenue)} /></div>
+      </div>
+      {recommendations.length ? <div className="mt-5 grid gap-4 md:grid-cols-2">{recommendations.map(({ product, reason, projectedTotal }) => (
+        <article key={product.id} className="rounded-xl border border-white/10 bg-slate-950/70 p-4">
+          <div className="flex justify-between gap-4"><div><p className="font-extrabold text-white">{product.name}</p><p className="mt-1 text-sm font-bold text-violet-300">+{formatMoney(product.price)}</p></div><span className="text-xs text-slate-500">New total<br/><strong className="text-slate-300">{formatMoney(projectedTotal)}</strong></span></div>
+          <p className="mt-3 text-sm leading-6 text-slate-400">{reason}</p>
+          <div className="mt-4 flex gap-2"><button disabled={busy} onClick={() => onDecision(product.id, "accepted")} className="rounded-lg bg-violet-400 px-3 py-2 text-sm font-extrabold text-violet-950 hover:bg-violet-300 disabled:opacity-50">Add recommended item</button><button disabled={busy} onClick={() => onDecision(product.id, "rejected")} className="rounded-lg px-3 py-2 text-sm font-bold text-slate-400 hover:bg-white/5">No thanks</button></div>
+        </article>
+      ))}</div> : <p className="mt-5 text-sm text-slate-500">No additional compatible item fits the remaining budget.</p>}
+      {metrics.impressions > 0 && <p className="mt-4 text-xs text-slate-500">Measured acceptance rate: {(metrics.acceptanceRate * 100).toFixed(1)}%. Revenue uplift counts accepted items only.</p>}
+    </section>
+  );
+}
+
 export default function App() {
   const [filters, setFilters] = useState({ query: "", maxPrice: "", inStock: true });
   const [products, setProducts] = useState([]);
@@ -54,6 +74,8 @@ export default function App() {
   const [message, setMessage] = useState("I need a skincare gift under ₹2,000");
   const [conversation, setConversation] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [metrics, setMetrics] = useState({ impressions: 0, accepted: 0, rejected: 0, incrementalRevenue: 0, acceptanceRate: 0 });
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const initialized = useRef(false);
@@ -85,18 +107,40 @@ export default function App() {
     } catch (error) { setNotice(error.message); } finally { setBusy(false); }
   }
 
-  async function refreshSession() { setSession(await api(`/api/sessions/${session.id}`)); }
+  async function refreshSession() {
+    const current = await api(`/api/sessions/${session.id}`);
+    setSession(current);
+    return current;
+  }
+
+  async function loadRecommendations() {
+    const recommendationBody = await api(`/api/sessions/${session.id}/recommendations`);
+    const metricBody = await api("/api/recommendations/metrics");
+    setRecommendations(recommendationBody.recommendations);
+    setMetrics(metricBody);
+  }
 
   async function addToCart(product) {
     setBusy(true); setNotice("");
-    try { await api(`/api/sessions/${session.id}/cart`, { method: "POST", body: JSON.stringify({ productId: product.id, quantity: 1 }) }); await refreshSession(); setNotice(`${product.name} added using verified price and stock.`); }
+    try { await api(`/api/sessions/${session.id}/cart`, { method: "POST", body: JSON.stringify({ productId: product.id, quantity: 1 }) }); await refreshSession(); await loadRecommendations(); setNotice(`${product.name} added using verified price and stock.`); }
     catch (error) { setNotice(error.message); } finally { setBusy(false); }
   }
 
   async function removeFromCart(productId) {
     setBusy(true); setNotice("");
-    try { await api(`/api/sessions/${session.id}/cart/${productId}`, { method: "DELETE" }); await refreshSession(); }
+    try { await api(`/api/sessions/${session.id}/cart/${productId}`, { method: "DELETE" }); await refreshSession(); await loadRecommendations(); }
     catch (error) { setNotice(error.message); } finally { setBusy(false); }
+  }
+
+  async function decideRecommendation(productId, decision) {
+    setBusy(true); setNotice("");
+    try {
+      const result = await api(`/api/sessions/${session.id}/recommendations/${productId}`, { method: "POST", body: JSON.stringify({ decision }) });
+      await refreshSession();
+      setMetrics(result.metrics);
+      setRecommendations((current) => current.filter(({ product }) => product.id !== productId));
+      setNotice(decision === "accepted" ? `Recommended item added. Verified cart total is now ${formatMoney(result.cart.total)}.` : "Recommendation dismissed and recorded.");
+    } catch (error) { setNotice(error.message); } finally { setBusy(false); }
   }
 
   async function checkout() {
@@ -117,7 +161,7 @@ export default function App() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_80%_0%,rgba(55,85,150,.45),transparent_34rem)]" />
       <div className="relative mx-auto w-[min(1180px,calc(100%-36px))]">
         <header className="pb-12 pt-14 md:pt-20">
-          <div className="flex flex-wrap items-center gap-3"><p className="text-xs font-black tracking-[0.2em] text-blue-400">RAZORPAY BUILDATHON</p><span className="rounded-full border border-blue-400/30 px-3 py-1 text-[11px] font-bold text-blue-200">PHASE 2 · CONVERSATIONAL CHECKOUT</span></div>
+          <div className="flex flex-wrap items-center gap-3"><p className="text-xs font-black tracking-[0.2em] text-blue-400">RAZORPAY BUILDATHON</p><span className="rounded-full border border-violet-400/30 px-3 py-1 text-[11px] font-bold text-violet-200">PHASE 3 · REVENUE-AWARE COMMERCE</span></div>
           <h1 className="mt-4 max-w-4xl text-5xl font-black leading-[.94] tracking-[-.055em] sm:text-7xl md:text-8xl">Shop through a guarded agent.</h1>
           <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-400">Describe what you need. The agent interprets constraints, searches verified merchant records, and creates a test order only after you approve the exact total.</p>
         </header>
@@ -133,6 +177,7 @@ export default function App() {
               <form onSubmit={sendMessage} className="flex gap-3 border-t border-white/10 p-4"><label className="sr-only" htmlFor="agent-message">Shopping request</label><input id="agent-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="I need a skincare gift under ₹2,000" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-400" /><button disabled={!session || busy} className="rounded-xl bg-blue-600 px-5 font-extrabold transition hover:bg-blue-500 disabled:opacity-50">{busy ? "Working…" : "Ask agent"}</button></form>
             </section>
             {suggestions.length > 0 && <section aria-labelledby="suggestions-heading"><div className="mb-4 flex items-center justify-between"><h2 id="suggestions-heading" className="text-xl font-extrabold">Agent suggestions</h2><span className="text-sm text-slate-500">Verified now</span></div><div className="grid gap-4 md:grid-cols-2">{suggestions.map((product) => <ProductCard key={product.id} product={product} onAdd={addToCart} />)}</div></section>}
+            <RecommendationPanel recommendations={recommendations} metrics={metrics} busy={busy} onDecision={decideRecommendation} />
             <details className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
               <summary className="cursor-pointer font-extrabold text-slate-200">Browse the authoritative catalogue</summary>
               <form onSubmit={(event) => { event.preventDefault(); search(filters); }} className="mt-5 grid items-end gap-4 md:grid-cols-[2fr_1fr_auto_auto]"><label className="grid gap-2 text-xs font-bold text-slate-400">Search<input name="query" value={filters.query} onChange={update} placeholder="e.g. skincare gift" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-base font-normal text-white outline-none" /></label><label className="grid gap-2 text-xs font-bold text-slate-400">Maximum price (₹)<input name="maxPrice" value={filters.maxPrice} onChange={update} type="number" min="0" placeholder="2000" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-base font-normal text-white outline-none" /></label><label className="flex min-h-12 items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-300"><input name="inStock" checked={filters.inStock} onChange={update} type="checkbox" className="size-4 accent-blue-500" /> In stock</label><button className="min-h-12 rounded-xl border border-white/15 px-4 font-bold hover:bg-white/5">Search</button></form>

@@ -121,6 +121,22 @@ export function createApp({
         const body = await requestBody(request);
         return json(response, 201, await commerce.approveCheckout(decodeURIComponent(checkoutMatch[1]), body.approvedTotal));
       }
+      const recommendationsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/recommendations$/);
+      if (request.method === "GET" && recommendationsMatch) {
+        return json(response, 200, { recommendations: commerce.getRecommendations(decodeURIComponent(recommendationsMatch[1])) });
+      }
+      const recommendationDecisionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/recommendations\/([^/]+)$/);
+      if (request.method === "POST" && recommendationDecisionMatch) {
+        const body = await requestBody(request);
+        return json(response, 200, commerce.decideRecommendation(
+          decodeURIComponent(recommendationDecisionMatch[1]),
+          decodeURIComponent(recommendationDecisionMatch[2]),
+          body.decision
+        ));
+      }
+      if (request.method === "GET" && url.pathname === "/api/recommendations/metrics") {
+        return json(response, 200, commerce.recommendationMetrics());
+      }
       if (request.method === "POST" && url.pathname === "/api/webhooks/razorpay") {
         const body = await requestBody(request, { raw: true });
         const signature = request.headers["x-razorpay-signature"];

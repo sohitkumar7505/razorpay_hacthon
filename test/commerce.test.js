@@ -64,3 +64,48 @@ test("paid webhook updates a known order and ignores duplicate delivery", async 
   assert.equal(service.recordPayment("order_test_123", "pay_123").status, "paid");
   assert.throws(() => service.recordPayment("unknown", "pay_404"), ValidationError);
 });
+
+test("recommends only compatible, in-stock add-ons within the remaining budget", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000 });
+  service.addToCart(session.id, "serum-01", 1);
+  const recommendations = service.getRecommendations(session.id);
+  assert.ok(recommendations.length >= 1 && recommendations.length <= 2);
+  assert.equal(recommendations[0].product.id, "gift-wrap-01");
+  assert.equal(recommendations[0].projectedTotal, 998);
+  assert.match(recommendations[0].reason, /pairs with/i);
+  assert.ok(recommendations.every((item) => item.product.inventory > 0 && item.projectedTotal <= 2000));
+});
+
+test("returns no recommendation when every compatible add-on exceeds the remaining budget", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 900 });
+  service.addToCart(session.id, "serum-01", 1);
+  assert.deepEqual(service.getRecommendations(session.id), []);
+});
+
+test("accepts only a shown recommendation and measures incremental revenue honestly", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000 });
+  service.addToCart(session.id, "serum-01", 1);
+  const shown = service.getRecommendations(session.id);
+  assert.throws(() => service.decideRecommendation(session.id, "cream-01", "accepted"), /not shown/i);
+  const decision = service.decideRecommendation(session.id, shown[0].product.id, "accepted");
+  assert.equal(decision.cart.total, 998);
+  assert.equal(decision.metrics.impressions, shown.length);
+  assert.equal(decision.metrics.accepted, 1);
+  assert.equal(decision.metrics.incrementalRevenue, 199);
+  assert.equal(decision.metrics.acceptanceRate, 1 / shown.length);
+});
+
+test("invalidates recommendation decisions when the cart changes", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000 });
+  service.addToCart(session.id, "serum-01", 1);
+  service.getRecommendations(session.id);
+  service.decideRecommendation(session.id, "gift-wrap-01", "accepted");
+  service.removeFromCart(session.id, "gift-wrap-01");
+  const refreshed = service.getRecommendations(session.id);
+  assert.equal(refreshed[0].product.id, "gift-wrap-01");
+  assert.equal(service.decideRecommendation(session.id, "gift-wrap-01", "accepted").cart.total, 998);
+});

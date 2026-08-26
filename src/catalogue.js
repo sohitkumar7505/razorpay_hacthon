@@ -22,10 +22,17 @@ function validateProduct(product) {
   if (!Array.isArray(product.tags) || product.tags.some((tag) => typeof tag !== "string")) {
     throw new ValidationError("tags must be an array of strings");
   }
+  if (product.complements !== undefined && (!Array.isArray(product.complements) || product.complements.some((id) => typeof id !== "string"))) {
+    throw new ValidationError("complements must be an array of product ids");
+  }
   if (typeof product.returnable !== "boolean") {
     throw new ValidationError("returnable must be a boolean");
   }
-  return Object.freeze({ ...product, tags: Object.freeze([...product.tags]) });
+  return Object.freeze({
+    ...product,
+    tags: Object.freeze([...product.tags]),
+    complements: Object.freeze([...(product.complements ?? [])])
+  });
 }
 
 function searchableText(product) {

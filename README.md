@@ -1,6 +1,6 @@
 # Guarded Conversational Commerce
 
-Phase 2 of an incremental Razorpay Buildathon project. It retains the authoritative catalogue and adds conversational product discovery, a guarded cart, exact-total checkout approval, Razorpay test-order support, signed webhooks, and a commerce audit trail.
+Phase 3 of an incremental Razorpay Buildathon project. It combines the authoritative catalogue and conversational checkout with an explainable upsell/cross-sell engine that respects compatibility, inventory, and the shopper's remaining budget.
 
 ## Run locally
 
@@ -29,6 +29,9 @@ For development, run `npm run dev`. Vite serves React on <http://localhost:5173>
 - `POST /api/sessions/:id/cart`
 - `DELETE /api/sessions/:id/cart/:productId`
 - `POST /api/sessions/:id/checkout`
+- `GET /api/sessions/:id/recommendations`
+- `POST /api/sessions/:id/recommendations/:productId`
+- `GET /api/recommendations/metrics`
 - `POST /api/webhooks/razorpay`
 
 ## Razorpay test mode
@@ -37,8 +40,8 @@ The app uses safe simulation when credentials are absent. Copy `.env.example` to
 
 ## TDD acceptance contract
 
-Tests verify bounded intent parsing, authoritative inventory and pricing, spending-limit enforcement, exact-total approval, idempotent orders, signed webhooks, duplicate webhook safety, API readiness, and malformed-input handling.
+Tests verify bounded intent parsing, authoritative inventory and pricing, spending-limit enforcement, exact-total approval, idempotent orders, signed webhooks, compatible recommendations, remaining-budget enforcement, unshown-item rejection, recommendation metrics, API readiness, and malformed-input handling.
 
 ## Current boundary
 
-This version deliberately uses validated seed data, deterministic intent parsing, and an in-memory session store. Persistent storage, LLM tool adapters, authentication, and production payment persistence belong to later releases.
+This version deliberately uses validated seed data, deterministic intent parsing, explicit product-compatibility relationships, and an in-memory session store. Persistent storage, learned ranking, authentication, and production payment persistence belong to later releases.

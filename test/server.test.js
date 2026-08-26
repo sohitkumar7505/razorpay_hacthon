@@ -75,3 +75,18 @@ test("API rejects malformed JSON and unknown sessions safely", () => withServer(
   assert.equal(missing.status, 400);
   assert.match((await missing.json()).error, /session/i);
 }));
+
+test("recommendation API explains an add-on and tracks acceptance", () => withServer(async (baseUrl) => {
+  const session = await (await post(baseUrl, "/api/sessions", { spendingLimit: 2000 })).json();
+  await post(baseUrl, `/api/sessions/${session.id}/cart`, { productId: "serum-01", quantity: 1 });
+  const response = await fetch(`${baseUrl}/api/sessions/${session.id}/recommendations`);
+  assert.equal(response.status, 200);
+  const recommendations = (await response.json()).recommendations;
+  assert.equal(recommendations[0].product.id, "gift-wrap-01");
+
+  const accepted = await post(baseUrl, `/api/sessions/${session.id}/recommendations/gift-wrap-01`, { decision: "accepted" });
+  assert.equal(accepted.status, 200);
+  const result = await accepted.json();
+  assert.equal(result.cart.total, 998);
+  assert.equal(result.metrics.incrementalRevenue, 199);
+}));
