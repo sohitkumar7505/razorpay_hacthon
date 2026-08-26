@@ -102,7 +102,10 @@ export class AgentRuntime {
   #shoppingGraph() {
     return this.#linearGraph([
       ["intent-agent", this.#node("intent-agent", async ({ sessionId, input }) => ({ interpreted: this.commerce.previewShoppingContext(sessionId, input.message) }))],
+      ["preference-agent", this.#node("preference-agent", async ({ interpreted }) => ({ context: { rememberedPreferences: interpreted } }))],
       ["catalogue-agent", this.#node("catalogue-agent", async ({ sessionId, input }) => ({ result: this.commerce.message(sessionId, input.message) }))],
+      ["ranking-agent", this.#node("ranking-agent", async ({ result }) => ({ result: { ...result, suggestions: [...result.suggestions].sort((a, b) => a.price - b.price) } }))],
+      ["clarification-agent", this.#node("clarification-agent", async ({ result }) => ({ result: { ...result, requiresClarification: result.action?.type === "clarification.required" } }))],
       ["guardrail-agent", this.#node("guardrail-agent", async ({ result, interpreted }) => {
         if (result.suggestions.some(({ inventory }) => inventory < 1)) throw new ValidationError("agent suggested unavailable inventory");
         if (interpreted.maxPrice !== undefined && result.suggestions.some(({ price }) => price > interpreted.maxPrice)) throw new ValidationError("agent exceeded requested budget");

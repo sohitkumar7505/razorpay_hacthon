@@ -80,7 +80,7 @@ export class CommerceService {
     return { items, total: items.reduce((sum, item) => sum + item.lineTotal, 0), currency: "INR" };
   }
 
-  createSession({ spendingLimit, purchaseHistory = [] } = {}) {
+  createSession({ spendingLimit, purchaseHistory = [], customerId, customerName, preferences = {} } = {}) {
     if (spendingLimit !== undefined && (!Number.isFinite(spendingLimit) || spendingLimit <= 0)) {
       throw new ValidationError("spendingLimit must be a positive number");
     }
@@ -89,16 +89,30 @@ export class CommerceService {
     const session = {
       id: randomUUID(), spendingLimit, items: [], messages: [], checkout: null,
       recommendationState: { fingerprint: null, shown: [], decisions: {} },
-      shoppingContext: {}, purchaseHistory: [...new Set(purchaseHistory)], lastSuggestionIds: []
+      shoppingContext: { ...preferences }, purchaseHistory: [...new Set(purchaseHistory)], lastSuggestionIds: [],
+      customerId, customerName
     };
     this.#sessions.set(session.id, session);
-    this.#record("session.created", { sessionId: session.id, spendingLimit, purchaseHistory: session.purchaseHistory });
+    this.#record("session.created", { sessionId: session.id, customerId, spendingLimit, purchaseHistory: session.purchaseHistory });
     return this.getSession(session.id);
   }
 
   getSession(id) {
     const session = this.#session(id);
-    return { id: session.id, spendingLimit: session.spendingLimit, messages: clone(session.messages), shoppingContext: clone(session.shoppingContext), purchaseHistory: clone(session.purchaseHistory), cart: this.#cart(session), checkout: clone(session.checkout) };
+    return { id: session.id, customerId: session.customerId, customerName: session.customerName, spendingLimit: session.spendingLimit, messages: clone(session.messages), shoppingContext: clone(session.shoppingContext), purchaseHistory: clone(session.purchaseHistory), cart: this.#cart(session), checkout: clone(session.checkout) };
+  }
+
+  exportSession(id) { return clone(this.#session(id)); }
+
+  restoreSession(state) {
+    if (!state?.id || this.#sessions.has(state.id)) return;
+    const restored = clone(state);
+    restored.recommendationState ??= { fingerprint: null, shown: [], decisions: {} };
+    restored.shoppingContext ??= {};
+    restored.purchaseHistory ??= [];
+    restored.lastSuggestionIds ??= [];
+    this.#sessions.set(restored.id, restored);
+    if (restored.checkout?.paymentOrder?.id) this.#orders.set(restored.checkout.paymentOrder.id, restored.id);
   }
 
   previewShoppingContext(sessionId, message) {
@@ -130,9 +144,33 @@ export class CommerceService {
 
   message(sessionId, message) {
     const session = this.#session(sessionId);
-    if (/\b(add|put)\b.*\b(cart|basket)\b/i.test(message)) {
+    const normalizedCommand = message.toLocaleLowerCase("en-IN");
+    if (/\b(remove|delete)\b/.test(normalizedCommand)) {
+      const matches = session.items.filter(({ productId }) => normalizedCommand.includes(this.catalogue.get(productId).name.toLocaleLowerCase("en-IN")));
+      const target = matches[0] ?? (session.items.length === 1 ? session.items[0] : null);
+      if (target) {
+        const product = this.catalogue.get(target.productId);
+        const cart = this.removeFromCart(sessionId, target.productId);
+        const reply = `I removed ${product.name}. Your verified cart total is ₹${cart.total}.`;
+        const action = { type: "cart.removed", productId: product.id, cart };
+        session.messages.push({ role: "user", content: message }, { role: "assistant", content: reply });
+        return { reply, suggestions: [], interpreted: clone(session.shoppingContext), memoryUsed: true, action };
+      }
+    }
+    const quantityMatch = normalizedCommand.match(/(?:make|change|set).*?(?:quantity\s*)?(\d+)/);
+    if (quantityMatch && session.items.length === 1) {
+      const productId = session.items[0].productId;
+      const cart = this.setCartQuantity(sessionId, productId, Number(quantityMatch[1]));
+      const reply = `I changed the quantity of ${this.catalogue.get(productId).name} to ${quantityMatch[1]}. Your verified total is ₹${cart.total}.`;
+      const action = { type: "cart.updated", productId, cart };
+      session.messages.push({ role: "user", content: message }, { role: "assistant", content: reply });
+      return { reply, suggestions: [], interpreted: clone(session.shoppingContext), memoryUsed: true, action };
+    }
+    if (/\b(add|put)\b.*\b(cart|basket|product|item)\b/i.test(message)) {
       const requested = parseShoppingTurn(message);
       let candidates = session.lastSuggestionIds.map((id) => this.catalogue.get(id));
+      const position = /\b(first|1st)\b/i.test(message) ? 0 : /\b(second|2nd)\b/i.test(message) ? 1 : /\b(third|3rd)\b/i.test(message) ? 2 : null;
+      if (position !== null && candidates[position]) candidates = [candidates[position]];
       if (requested.productType) candidates = candidates.filter((product) => productText(product).includes(requested.productType));
       const normalizedMessage = message.toLocaleLowerCase("en-IN");
       const namedCandidates = candidates.filter((product) => normalizedMessage.includes(product.name.toLocaleLowerCase("en-IN")));
@@ -156,6 +194,9 @@ export class CommerceService {
     }
     const hadContext = Object.keys(session.shoppingContext).length > 0;
     const interpreted = this.previewShoppingContext(sessionId, message);
+    if (/\bcheaper|less expensive|lower price\b/i.test(message) && session.lastSuggestionIds.length) {
+      interpreted.maxPrice = Math.min(...session.lastSuggestionIds.map((id) => this.catalogue.get(id).price)) - 1;
+    }
     session.shoppingContext = interpreted;
     let suggestions = this.#contextualProducts(interpreted);
     let relaxed = false;
@@ -206,6 +247,24 @@ export class CommerceService {
     session.recommendationState = { fingerprint: null, shown: [], decisions: {} };
     const cart = this.#cart(session);
     this.#record("cart.item_removed", { sessionId, productId, total: cart.total });
+    return cart;
+  }
+
+  setCartQuantity(sessionId, productId, quantity) {
+    const session = this.#session(sessionId);
+    if (session.checkout) throw new ValidationError("cart is locked after checkout approval");
+    if (!Number.isInteger(quantity) || quantity < 1) throw new ValidationError("quantity must be a positive integer");
+    const item = session.items.find((entry) => entry.productId === productId);
+    if (!item) throw new ValidationError(`Product is not in cart: ${productId}`);
+    const inventory = this.catalogue.checkInventory(productId, quantity);
+    if (!inventory.canFulfil) throw new ValidationError(`Insufficient stock: ${inventory.available} available`);
+    const difference = quantity - item.quantity;
+    const nextTotal = this.#cart(session).total + difference * this.catalogue.get(productId).price;
+    if (session.spendingLimit !== undefined && nextTotal > session.spendingLimit) throw new ValidationError(`Cart total ₹${nextTotal} exceeds spending limit ₹${session.spendingLimit}`);
+    item.quantity = quantity;
+    session.recommendationState = { fingerprint: null, shown: [], decisions: {} };
+    const cart = this.#cart(session);
+    this.#record("cart.quantity_updated", { sessionId, productId, quantity, total: cart.total });
     return cart;
   }
 
@@ -314,6 +373,8 @@ export class CommerceService {
       session.checkout.paymentId = paymentId;
       session.checkout.paidAt = new Date().toISOString();
       session.purchaseHistory = [...new Set([...session.purchaseHistory, ...session.items.map(({ productId }) => productId)])];
+      this.catalogue.decrementInventory(session.items);
+      session.items = [];
       this.#record("payment.captured", { sessionId, orderId, paymentId });
     }
     return clone(session.checkout);

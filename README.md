@@ -2,6 +2,8 @@
 
 Phase 4 completes the incremental Razorpay Buildathon roadmap. It combines the authoritative catalogue, conversational checkout, and explainable recommendations with a campaign orchestrator that detects measured revenue gaps, enforces merchant policies, requires human approval, monitors performance, and triggers stop-loss automatically.
 
+Version 1.0 adds Dockerized PostgreSQL persistence, customer identity, restart-safe chat/cart/order history, positional and quantity-aware shopkeeper commands, richer LangGraph state visibility, a complete idempotent payment-to-order lifecycle, merchant catalogue management, and persisted agent guardrails.
+
 ## Product surfaces
 
 - `/customer` — conversational shopping, verified catalogue, recommendations, guarded cart, and Razorpay checkout.
@@ -28,6 +30,14 @@ The customer store uses a two-column workspace: chat and verified agent suggesti
 
 ## Run locally
 
+Start PostgreSQL first:
+
+```bash
+npm run db:up
+```
+
+The Docker volume `agentic_commerce_data` keeps customers, sessions, carts, orders, products, and merchant settings across restarts.
+
 Requires Node.js 20 or newer. There are currently no third-party dependencies.
 
 ```bash
@@ -36,6 +46,8 @@ npm test
 npm run build
 npm start
 ```
+
+Open `http://localhost:3000/customer` for the customer store and `http://localhost:3000/merchant` for agent operations, catalogue management, and guardrails.
 
 Open <http://localhost:3000/customer> for the store or <http://localhost:3000/merchant> for merchant operations.
 

@@ -89,6 +89,20 @@ test("asks for a choice instead of adding when a cart reference is ambiguous", (
   assert.equal(chosen.action.productId, "cream-01");
 });
 
+test("supports positional selection, conversational quantity changes and removal", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000 });
+  service.message(session.id, "Show me skincare for gifting");
+  const added = service.message(session.id, "add the first product");
+  assert.equal(added.action.type, "cart.added");
+  const updated = service.message(session.id, "make quantity 2");
+  assert.equal(updated.action.type, "cart.updated");
+  assert.equal(updated.action.cart.items[0].quantity, 2);
+  const removed = service.message(session.id, "remove the item");
+  assert.equal(removed.action.type, "cart.removed");
+  assert.equal(removed.action.cart.items.length, 0);
+});
+
 test("cart totals are calculated from catalogue prices and enforce spending limits", () => {
   const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
   const session = service.createSession({ spendingLimit: 1500 });

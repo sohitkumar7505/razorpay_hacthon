@@ -102,6 +102,32 @@ export class Catalogue {
     return result;
   }
 
+  upsert(input) {
+    const product = validateProduct(input);
+    const action = this.#products.has(product.id) ? "catalogue.product_updated" : "catalogue.product_created";
+    this.#products.set(product.id, product);
+    this.#record(action, { productId: product.id });
+    return product;
+  }
+
+  remove(id) {
+    this.get(id);
+    this.#products.delete(id);
+    this.#record("catalogue.product_removed", { productId: id });
+  }
+
+  decrementInventory(items) {
+    for (const { productId, quantity } of items) {
+      const product = this.get(productId);
+      if (product.inventory < quantity) throw new ValidationError(`Insufficient stock: ${product.inventory} available`);
+    }
+    for (const { productId, quantity } of items) {
+      const product = this.get(productId);
+      this.#products.set(productId, validateProduct({ ...product, inventory: product.inventory - quantity }));
+      this.#record("inventory.decremented", { productId, quantity, remaining: product.inventory - quantity });
+    }
+  }
+
   auditLog() {
     return structuredClone(this.#audit);
   }

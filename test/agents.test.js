@@ -23,7 +23,7 @@ test("runs shopping through specialized LangGraph agents with observable events"
   assert.equal(run.workflow, "shopping");
   assert.equal(run.status, "completed");
   assert.deepEqual(run.events.filter(({ status }) => status === "completed").map(({ agent }) => agent), [
-    "intent-agent", "catalogue-agent", "guardrail-agent", "response-agent"
+    "intent-agent", "preference-agent", "catalogue-agent", "ranking-agent", "clarification-agent", "guardrail-agent", "response-agent"
   ]);
   assert.equal(run.llmUsed, false);
 });

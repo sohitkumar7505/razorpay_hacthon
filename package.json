@@ -1,6 +1,6 @@
 {
   "name": "agentic-merchant-catalogue",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,9 @@
     "build": "vite build",
     "start": "node --env-file-if-exists=.env src/server.js",
     "test": "node --test",
-    "test:watch": "node --test --watch"
+    "test:watch": "node --test --watch",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down"
   },
   "engines": {
     "node": ">=20"
@@ -19,6 +21,7 @@
     "@langchain/core": "^1.2.9",
     "@langchain/langgraph": "^1.4.12",
     "@langchain/openai": "^1.5.10",
+    "pg": "^8.23.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "zod": "^4.4.3"
