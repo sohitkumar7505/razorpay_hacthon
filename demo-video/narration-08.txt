@@ -1,0 +1,1 @@
+The result is a complete agentic commerce demonstration built with React, Tailwind, Node.js, LangGraph, Docker, PostgreSQL, and Razorpay test mode. Forty-nine automated tests cover the core safety and commerce behavior. The full source code and setup instructions are included in the repository.

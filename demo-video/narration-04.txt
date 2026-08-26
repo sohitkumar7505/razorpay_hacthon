@@ -1,0 +1,1 @@
+Checkout creates a real Razorpay test order only after the customer approves the exact verified total. The backend verifies the payment signature and session ownership. Successful payment creates an order, reduces inventory, clears the cart, updates purchase history, and safely ignores duplicate events.

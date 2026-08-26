@@ -2,6 +2,10 @@
 
 An AI storefront and merchant growth platform built for the Razorpay Buildathon. Customers can talk to a shopkeeper-style agent, discover verified products, manage a guarded cart, receive explainable recommendations, and complete a Razorpay test payment. Merchants can manage their catalogue, configure agent limits, inspect LangGraph execution, and operate bounded campaigns.
 
+## Demo video
+
+The narrated hackathon walkthrough is available at [`demo-video/guarded-agentic-commerce-submission.mp4`](demo-video/guarded-agentic-commerce-submission.mp4). It demonstrates the customer journey, Razorpay test checkout, LangGraph execution, catalogue management, merchant guardrails, PostgreSQL persistence, and bounded campaign orchestration.
+
 ## What is implemented
 
 ### Customer storefront

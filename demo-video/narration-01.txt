@@ -1,0 +1,1 @@
+The customer begins in a focused two-column workspace. The left side contains the conversational shopping agent and verified catalogue. The right side contains a spending-limited cart and explainable recommendations. Customer identity, chat, preferences, cart, and orders persist in PostgreSQL.

@@ -1,0 +1,1 @@
+The campaign orchestrator detects measured revenue gaps, proposes a bounded audience, budget, discount, and channel, then waits for human approval. It measures spend and revenue, enforces hard limits, reports return on ad spend, and automatically pauses poor performance.
