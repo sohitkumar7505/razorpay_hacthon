@@ -1,101 +1,186 @@
-# Guarded Conversational Commerce
+# Guarded Agentic Commerce
 
-Phase 4 completes the incremental Razorpay Buildathon roadmap. It combines the authoritative catalogue, conversational checkout, and explainable recommendations with a campaign orchestrator that detects measured revenue gaps, enforces merchant policies, requires human approval, monitors performance, and triggers stop-loss automatically.
+An AI storefront and merchant growth platform built for the Razorpay Buildathon. Customers can talk to a shopkeeper-style agent, discover verified products, manage a guarded cart, receive explainable recommendations, and complete a Razorpay test payment. Merchants can manage their catalogue, configure agent limits, inspect LangGraph execution, and operate bounded campaigns.
 
-Version 1.0 adds Dockerized PostgreSQL persistence, customer identity, restart-safe chat/cart/order history, positional and quantity-aware shopkeeper commands, richer LangGraph state visibility, a complete idempotent payment-to-order lifecycle, merchant catalogue management, and persisted agent guardrails.
+## What is implemented
 
-## Product surfaces
+### Customer storefront
 
-- `/customer` — conversational shopping, verified catalogue, recommendations, guarded cart, and Razorpay checkout.
-- `/merchant` — live LangGraph operations, revenue opportunities, campaign proposals, approval, monitoring, and stop-loss.
+- Multi-turn shopping chat that remembers category, product type, use case, and budget.
+- Verified product search using authoritative prices, inventory, shipping time, and return eligibility.
+- Natural cart commands such as `Add this cream to cart`, `Add the first product`, `Make quantity 2`, `Remove the item`, and `Show me something cheaper`.
+- Clarification instead of unsafe cart changes when a product reference is ambiguous.
+- Product cards with price, tags, inventory, shipping time, and cart controls.
+- Guarded cart with quantity controls, spending-limit enforcement, and verified totals.
+- Explainable recommendations based on the cart and purchase history.
+- Persistent customer identity, chat, preferences, cart, checkout, and order history.
+- Razorpay test checkout with server-side signature verification.
+- Payment confirmation, inventory reduction, purchase-history updates, and duplicate-event protection.
+- Visible agent activity and remembered-preference indicators.
 
-Both pages use the same Node.js backend. Customer activity is intentionally visible in the merchant Agent Operations panel, while merchant controls never appear in the customer experience.
+### Merchant console
 
-## LangGraph agents
+- Live LangGraph runs with node-level status and redacted execution details.
+- Authoritative product list with prices and inventory.
+- Clearly labelled add/edit product form with descriptions and examples.
+- Product creation, editing, deletion, and inventory updates.
+- CSV catalogue import with per-row validation errors.
+- Persistent settings for maximum spending, discount limits, approval thresholds, prohibited products, shipping policy, and return policy.
+- Revenue-opportunity detection and bounded campaign proposals.
+- Human approval, budget enforcement, ROAS measurement, and automatic stop-loss.
 
-The backend uses real compiled LangGraph `StateGraph` workflows rather than frontend-only agent labels:
+### Persistence and infrastructure
 
-- Shopping: intent-agent → catalogue-agent → guardrail-agent → response-agent
-- Recommendations: cart-context-agent → recommendation-agent → revenue-guard-agent
-- Checkout: cart-agent → risk-agent → payment-agent → audit-agent
-- Campaigns: opportunity-agent → campaign-agent → compliance-agent → campaign-audit-agent
+- PostgreSQL 16 through Docker Compose.
+- Persistent storage for customers, sessions, products, carts, orders, and merchant settings.
+- Session restoration after backend restarts.
+- React 19 and Tailwind CSS frontend.
+- Node.js backend and LangGraph workflows.
+- Razorpay test-mode integration and optional OpenAI response generation.
 
-`GET /api/agents/status` reports runtime configuration and `GET /api/agents/runs` returns redacted node-level execution history. The React Agent Operations panel polls these endpoints and displays running, completed, and failed nodes.
+## LangGraph architecture
 
-`OPENAI_API_KEY` is optional. When configured, only the final shopping response-agent uses the model, grounded exclusively in products already returned by deterministic catalogue tools. Authentication, quota, or network failures fall back to the deterministic response. Prices, inventory, cart totals, recommendations, campaign policies, approvals, payment creation, and payment verification never depend on the LLM.
+```text
+Shopping
+intent-agent → preference-agent → catalogue-agent → ranking-agent
+→ clarification-agent → guardrail-agent → response-agent
 
-The shopping workflow keeps structured, per-session conversational memory. Follow-ups such as “for daily use,” “make it a cream,” or “keep it under ₹1,000” update only that preference while retaining the earlier category and constraints. Remembered preferences are visible as chips on the customer page and are never shared between customer sessions.
+Recommendations
+cart-context-agent → recommendation-agent → revenue-guard-agent
 
-The customer store uses a two-column workspace: chat and verified agent suggestions on the left, with the guarded cart and explainable recommendations on the right. Natural requests such as “add this cream to cart” execute only when the previous suggestions identify exactly one product; ambiguous requests require the customer to choose by name. Recommendations use both current cart contents and recorded purchase history, and state which signal produced each suggestion.
+Checkout
+cart-agent → risk-agent → payment-agent → audit-agent
 
-## Run locally
-
-Start PostgreSQL first:
-
-```bash
-npm run db:up
+Campaigns
+opportunity-agent → campaign-agent → compliance-agent → campaign-audit-agent
 ```
 
-The Docker volume `agentic_commerce_data` keeps customers, sessions, carts, orders, products, and merchant settings across restarts.
+Prices, inventory, totals, guardrails, payment creation, and signature verification are deterministic. When `OPENAI_API_KEY` is configured, the model can improve only the final response after catalogue tools return verified products. LLM failures fall back to the deterministic response.
 
-Requires Node.js 20 or newer. There are currently no third-party dependencies.
+## Requirements
+
+- Node.js 20 or newer
+- npm
+- Docker Desktop or another Docker Compose-compatible runtime
+- Razorpay test credentials for gateway checkout
+- OpenAI API key only for optional LLM responses
+
+## Environment configuration
+
+```bash
+cp .env.example .env
+```
+
+Configure `.env`:
+
+```env
+PORT=3000
+DATABASE_URL=postgresql://commerce:commerce_dev@localhost:5432/agentic_commerce
+
+PAYMENT_MODE=razorpay
+RAZORPAY_KEY_ID=rzp_test_replace_me
+RAZORPAY_KEY_SECRET=replace_me
+RAZORPAY_WEBHOOK_SECRET=replace_me
+
+OPENAI_API_KEY=
+LLM_MODEL=gpt-4o-mini
+```
+
+Use only Razorpay test keys. Live key IDs are rejected, and `.env` must never be committed.
+
+## Run the application
 
 ```bash
 npm install
+npm run db:up
 npm test
 npm run build
 npm start
 ```
 
-Open `http://localhost:3000/customer` for the customer store and `http://localhost:3000/merchant` for agent operations, catalogue management, and guardrails.
+Open:
 
-Open <http://localhost:3000/customer> for the store or <http://localhost:3000/merchant> for merchant operations.
+- Customer storefront: <http://localhost:3000/customer>
+- Merchant console: <http://localhost:3000/merchant>
 
-For development, run `npm run dev`. Vite serves React on <http://localhost:5173> and proxies `/api` requests to the Node server on port 3000.
+Development mode:
 
-## API
+```bash
+npm run dev
+```
 
-- `GET /api/health`
-- `GET /api/products?q=gift&maxPrice=2000&inStock=true`
-- `GET /api/products/:id/inventory?quantity=1`
-- `GET /api/audit`
+Vite runs at <http://localhost:5173> and proxies `/api` to port 3000.
+
+Stop PostgreSQL without deleting its volume:
+
+```bash
+npm run db:down
+```
+
+## Razorpay payment lifecycle
+
+1. The customer approves the exact verified total.
+2. The backend creates a Razorpay test order.
+3. React opens Razorpay Checkout.
+4. Razorpay returns payment, order, and signature fields.
+5. The backend verifies the HMAC signature and session ownership.
+6. The order is marked paid exactly once.
+7. Inventory is reduced, history is updated, and the cart is cleared.
+8. A signed webhook can confirm the payment without duplicating it.
+
+For webhook testing, expose port 3000 through HTTPS and register:
+
+```text
+https://your-domain.example/api/webhooks/razorpay
+```
+
+## Important API routes
+
+### Customers and sessions
+
+- `GET|POST /api/customers`
+- `GET /api/customers/:id/orders`
 - `POST /api/sessions`
 - `GET /api/sessions/:id`
 - `POST /api/sessions/:id/messages`
 - `POST /api/sessions/:id/cart`
 - `DELETE /api/sessions/:id/cart/:productId`
-- `POST /api/sessions/:id/checkout`
-- `POST /api/sessions/:id/payment/verify`
+
+### Catalogue and recommendations
+
+- `GET|POST /api/products`
+- `PUT|DELETE /api/products/:id`
+- `POST /api/products/import`
+- `GET /api/products/:id/inventory`
 - `GET /api/sessions/:id/recommendations`
 - `POST /api/sessions/:id/recommendations/:productId`
-- `GET /api/recommendations/metrics`
+
+### Payments
+
+- `POST /api/sessions/:id/checkout`
+- `POST /api/sessions/:id/payment/verify`
+- `POST /api/webhooks/razorpay`
+
+### Merchant and agents
+
+- `GET|PUT /api/merchant/settings`
+- `GET /api/agents/status`
+- `GET /api/agents/runs`
 - `GET /api/campaigns/opportunities`
 - `GET|POST /api/campaigns`
-- `GET /api/campaigns/:id`
 - `POST /api/campaigns/:id/approve`
 - `POST /api/campaigns/:id/launch`
 - `POST /api/campaigns/:id/performance`
-- `POST /api/webhooks/razorpay`
-- `GET /api/agents/status`
-- `GET /api/agents/runs`
+- `GET /api/audit`
 
-## Razorpay test mode
+## Testing
 
-The app uses safe simulation when credentials are absent. To enable the actual Razorpay payment gateway:
+The suite covers conversational memory, cart commands, ambiguity handling, authoritative price and inventory checks, spending limits, recommendations, checkout approval, Razorpay HMAC verification, session/order binding, idempotent payments, LangGraph execution, campaign policies, ROAS, stop-loss, and API validation.
 
-1. Copy `.env.example` to `.env`.
-2. Set `PAYMENT_MODE=razorpay` and replace the placeholders with a Razorpay **test-mode** key ID, key secret, and webhook secret. Keep `PAYMENT_MODE=simulation` until the credentials are valid.
-3. Run `npm run build && npm start`.
-4. Complete a cart and approve its exact total. The React app will load Razorpay Checkout only after the server creates a real test order.
+```bash
+npm test
+```
 
-Live key IDs are rejected. The key secret never reaches React. After Checkout returns, the server verifies `razorpay_order_id|razorpay_payment_id` using HMAC-SHA256 and binds the order to its originating shopping session before marking it paid. The signed webhook at `/api/webhooks/razorpay` provides an independent, idempotent confirmation path.
+## Current production boundaries
 
-For local webhook testing, expose port 3000 through a secure tunnel and configure the resulting HTTPS `/api/webhooks/razorpay` URL in the Razorpay test dashboard. Never commit `.env`.
-
-## TDD acceptance contract
-
-Tests verify bounded intent parsing, conversational cart commands and ambiguity handling, authoritative inventory and pricing, exact-total approval, Razorpay order creation, Checkout option isolation, payment HMAC verification, session/order binding, signed webhooks, cart- and purchase-history-based recommendations, recommendation metrics, evidence-backed campaign opportunities, policy enforcement, human approval, lifecycle transitions, hard budget caps, measured ROAS, automatic stop-loss, API readiness, and malformed-input handling.
-
-## Current boundary
-
-This demo deliberately uses validated synthetic funnel data and simulated campaign delivery. It never contacts real customers. Persistent storage, live consent systems, authenticated approvers, production channel providers, learned ranking, and production payment persistence are required before a real deployment.
+This is a test-mode Buildathon application. Production deployment still needs authenticated accounts, role-based authorization, encrypted secret management, database migrations, monitoring, rate limiting, consent management, real campaign providers, image storage, PDF catalogue extraction, and deployment infrastructure. Campaign delivery remains simulated and Razorpay live keys are intentionally rejected.
