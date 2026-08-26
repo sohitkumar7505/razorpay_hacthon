@@ -15,10 +15,18 @@ async function withServer(run) {
   }
 }
 
+async function post(baseUrl, path, body, headers = {}) {
+  return fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body)
+  });
+}
+
 test("health endpoint reports readiness", () => withServer(async (baseUrl) => {
   const response = await fetch(`${baseUrl}/api/health`);
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { status: "ok", service: "catalogue" });
+  assert.deepEqual(await response.json(), { status: "ok", service: "catalogue", payments: "simulated" });
 }));
 
 test("catalogue endpoint supports bounded product search", () => withServer(async (baseUrl) => {
@@ -33,4 +41,37 @@ test("inventory endpoint rejects invalid quantities", () => withServer(async (ba
   const response = await fetch(`${baseUrl}/api/products/serum-01/inventory?quantity=0`);
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /quantity/i);
+}));
+
+test("shopping session supports conversation, cart and approved checkout", () => withServer(async (baseUrl) => {
+  const created = await post(baseUrl, "/api/sessions", { spendingLimit: 2000 });
+  assert.equal(created.status, 201);
+  const session = await created.json();
+
+  const reply = await post(baseUrl, `/api/sessions/${session.id}/messages`, {
+    message: "I need a skincare gift under ₹1,000"
+  });
+  assert.equal(reply.status, 200);
+  assert.equal((await reply.json()).suggestions[0].id, "serum-01");
+
+  const cart = await post(baseUrl, `/api/sessions/${session.id}/cart`, { productId: "serum-01", quantity: 1 });
+  assert.equal(cart.status, 200);
+  assert.equal((await cart.json()).total, 799);
+
+  const checkout = await post(baseUrl, `/api/sessions/${session.id}/checkout`, { approvedTotal: 799 });
+  assert.equal(checkout.status, 201);
+  assert.equal((await checkout.json()).paymentOrder.amount, 79900);
+}));
+
+test("API rejects malformed JSON and unknown sessions safely", () => withServer(async (baseUrl) => {
+  const malformed = await fetch(`${baseUrl}/api/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{"
+  });
+  assert.equal(malformed.status, 400);
+
+  const missing = await post(baseUrl, "/api/sessions/missing/cart", { productId: "serum-01", quantity: 1 });
+  assert.equal(missing.status, 400);
+  assert.match((await missing.json()).error, /session/i);
 }));

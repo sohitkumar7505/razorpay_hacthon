@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, extname, join, normalize } from "node:path";
 import { Catalogue, ValidationError } from "./catalogue.js";
+import { CommerceService } from "./commerce.js";
+import { paymentProviderFromEnv, verifyWebhookSignature } from "./payment.js";
 import { seedProducts } from "./seed.js";
 
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -16,6 +18,23 @@ const contentTypes = {
 function json(response, status, body) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   response.end(JSON.stringify(body));
+}
+
+async function requestBody(request, { raw = false } = {}) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 1_000_000) throw new ValidationError("request body exceeds 1 MB");
+    chunks.push(chunk);
+  }
+  const body = Buffer.concat(chunks);
+  if (raw) return body;
+  try {
+    return body.length ? JSON.parse(body.toString("utf8")) : {};
+  } catch {
+    throw new ValidationError("request body must be valid JSON");
+  }
 }
 
 async function staticFile(pathname, response) {
@@ -42,12 +61,17 @@ async function appShell(response) {
   }
 }
 
-export function createApp({ catalogue = new Catalogue(seedProducts) } = {}) {
+export function createApp({
+  catalogue = new Catalogue(seedProducts),
+  payments = paymentProviderFromEnv(),
+  webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET
+} = {}) {
+  const commerce = new CommerceService(catalogue, payments);
   return createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     try {
       if (request.method === "GET" && url.pathname === "/api/health") {
-        return json(response, 200, { status: "ok", service: "catalogue" });
+        return json(response, 200, { status: "ok", service: "catalogue", payments: payments.mode ?? "custom" });
       }
       if (request.method === "GET" && url.pathname === "/api/products") {
         const rawMaxPrice = url.searchParams.get("maxPrice");
@@ -69,7 +93,44 @@ export function createApp({ catalogue = new Catalogue(seedProducts) } = {}) {
         return json(response, 200, catalogue.checkInventory(decodeURIComponent(inventoryMatch[1]), quantity));
       }
       if (request.method === "GET" && url.pathname === "/api/audit") {
-        return json(response, 200, { events: catalogue.auditLog() });
+        return json(response, 200, { events: [...catalogue.auditLog(), ...commerce.auditLog()].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) });
+      }
+      if (request.method === "POST" && url.pathname === "/api/sessions") {
+        return json(response, 201, commerce.createSession(await requestBody(request)));
+      }
+      const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+      if (request.method === "GET" && sessionMatch) {
+        return json(response, 200, commerce.getSession(decodeURIComponent(sessionMatch[1])));
+      }
+      const messageMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
+      if (request.method === "POST" && messageMatch) {
+        const body = await requestBody(request);
+        return json(response, 200, commerce.message(decodeURIComponent(messageMatch[1]), body.message));
+      }
+      const cartMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/cart$/);
+      if (request.method === "POST" && cartMatch) {
+        const body = await requestBody(request);
+        return json(response, 200, commerce.addToCart(decodeURIComponent(cartMatch[1]), body.productId, body.quantity));
+      }
+      const cartItemMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/cart\/([^/]+)$/);
+      if (request.method === "DELETE" && cartItemMatch) {
+        return json(response, 200, commerce.removeFromCart(decodeURIComponent(cartItemMatch[1]), decodeURIComponent(cartItemMatch[2])));
+      }
+      const checkoutMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/checkout$/);
+      if (request.method === "POST" && checkoutMatch) {
+        const body = await requestBody(request);
+        return json(response, 201, await commerce.approveCheckout(decodeURIComponent(checkoutMatch[1]), body.approvedTotal));
+      }
+      if (request.method === "POST" && url.pathname === "/api/webhooks/razorpay") {
+        const body = await requestBody(request, { raw: true });
+        const signature = request.headers["x-razorpay-signature"];
+        if (!verifyWebhookSignature(body, signature, webhookSecret)) return json(response, 401, { error: "Invalid webhook signature" });
+        const event = JSON.parse(body.toString("utf8"));
+        if (event.event === "payment.captured") {
+          const payment = event.payload?.payment?.entity;
+          commerce.recordPayment(payment?.order_id, payment?.id);
+        }
+        return json(response, 200, { received: true });
       }
       if (request.method === "GET" && await staticFile(url.pathname, response)) return;
       if (request.method === "GET" && !url.pathname.startsWith("/api/") && await appShell(response)) return;

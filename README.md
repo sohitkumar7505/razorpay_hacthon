@@ -1,6 +1,6 @@
-# Agentic Merchant Catalogue
+# Guarded Conversational Commerce
 
-Phase 1 of an incremental Razorpay Buildathon project. This release provides an authoritative, searchable merchant catalogue with inventory checks and a reconstructable audit trail. The frontend uses React and Tailwind CSS; the API runs on Node.js.
+Phase 2 of an incremental Razorpay Buildathon project. It retains the authoritative catalogue and adds conversational product discovery, a guarded cart, exact-total checkout approval, Razorpay test-order support, signed webhooks, and a commerce audit trail.
 
 ## Run locally
 
@@ -23,11 +23,22 @@ For development, run `npm run dev`. Vite serves React on <http://localhost:5173>
 - `GET /api/products?q=gift&maxPrice=2000&inStock=true`
 - `GET /api/products/:id/inventory?quantity=1`
 - `GET /api/audit`
+- `POST /api/sessions`
+- `GET /api/sessions/:id`
+- `POST /api/sessions/:id/messages`
+- `POST /api/sessions/:id/cart`
+- `DELETE /api/sessions/:id/cart/:productId`
+- `POST /api/sessions/:id/checkout`
+- `POST /api/webhooks/razorpay`
+
+## Razorpay test mode
+
+The app uses safe simulation when credentials are absent. Copy `.env.example` to `.env` and provide `rzp_test_...` credentials to create Razorpay test orders. Live key IDs are rejected. Configure the webhook endpoint as `/api/webhooks/razorpay` with the same webhook secret.
 
 ## TDD acceptance contract
 
-The automated tests verify product validation, duplicate rejection, bounded search, authoritative inventory, audit events, API readiness, API filtering, and invalid-input handling.
+Tests verify bounded intent parsing, authoritative inventory and pricing, spending-limit enforcement, exact-total approval, idempotent orders, signed webhooks, duplicate webhook safety, API readiness, and malformed-input handling.
 
 ## Current boundary
 
-This version deliberately uses validated seed data and an in-memory store. CSV/PDF ingestion, persistent PostgreSQL storage, agent tool adapters, authentication, and Razorpay checkout belong to later incremental releases.
+This version deliberately uses validated seed data, deterministic intent parsing, and an in-memory session store. Persistent storage, LLM tool adapters, authentication, and production payment persistence belong to later releases.
