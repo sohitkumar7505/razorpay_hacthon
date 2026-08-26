@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, extname, join, normalize } from "node:path";
 import { Catalogue, ValidationError } from "./catalogue.js";
+import { AgentRuntime } from "./agents.js";
 import { CampaignOrchestrator, defaultPerformanceData } from "./campaigns.js";
 import { CommerceService } from "./commerce.js";
 import { paymentProviderFromEnv, verifyPaymentSignature, verifyWebhookSignature } from "./payment.js";
@@ -67,15 +68,23 @@ export function createApp({
   payments = paymentProviderFromEnv(),
   webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET,
   paymentVerificationSecret = process.env.RAZORPAY_KEY_SECRET,
-  campaignPerformance = defaultPerformanceData
+  campaignPerformance = defaultPerformanceData,
+  agentEnv = process.env
 } = {}) {
   const commerce = new CommerceService(catalogue, payments);
   const campaigns = new CampaignOrchestrator(catalogue, campaignPerformance);
+  const agents = new AgentRuntime({ commerce, campaigns, env: agentEnv });
   return createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     try {
       if (request.method === "GET" && url.pathname === "/api/health") {
         return json(response, 200, { status: "ok", service: "catalogue", payments: payments.mode ?? "custom" });
+      }
+      if (request.method === "GET" && url.pathname === "/api/agents/status") {
+        return json(response, 200, agents.status());
+      }
+      if (request.method === "GET" && url.pathname === "/api/agents/runs") {
+        return json(response, 200, { runs: agents.listRuns(Number(url.searchParams.get("limit") ?? 20)) });
       }
       if (request.method === "GET" && url.pathname === "/api/products") {
         const rawMaxPrice = url.searchParams.get("maxPrice");
@@ -109,7 +118,7 @@ export function createApp({
       const messageMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
       if (request.method === "POST" && messageMatch) {
         const body = await requestBody(request);
-        return json(response, 200, commerce.message(decodeURIComponent(messageMatch[1]), body.message));
+        return json(response, 200, await agents.runShopping(decodeURIComponent(messageMatch[1]), body.message));
       }
       const cartMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/cart$/);
       if (request.method === "POST" && cartMatch) {
@@ -123,11 +132,11 @@ export function createApp({
       const checkoutMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/checkout$/);
       if (request.method === "POST" && checkoutMatch) {
         const body = await requestBody(request);
-        return json(response, 201, await commerce.approveCheckout(decodeURIComponent(checkoutMatch[1]), body.approvedTotal));
+        return json(response, 201, await agents.runCheckout(decodeURIComponent(checkoutMatch[1]), body.approvedTotal));
       }
       const recommendationsMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/recommendations$/);
       if (request.method === "GET" && recommendationsMatch) {
-        return json(response, 200, { recommendations: commerce.getRecommendations(decodeURIComponent(recommendationsMatch[1])) });
+        return json(response, 200, { recommendations: await agents.runRecommendations(decodeURIComponent(recommendationsMatch[1])) });
       }
       const recommendationDecisionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/recommendations\/([^/]+)$/);
       if (request.method === "POST" && recommendationDecisionMatch) {
@@ -148,7 +157,7 @@ export function createApp({
         return json(response, 200, { campaigns: campaigns.list() });
       }
       if (request.method === "POST" && url.pathname === "/api/campaigns") {
-        return json(response, 201, campaigns.createProposal(await requestBody(request)));
+        return json(response, 201, await agents.runCampaign(await requestBody(request)));
       }
       const campaignMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)$/);
       if (request.method === "GET" && campaignMatch) {

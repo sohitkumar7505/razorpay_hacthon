@@ -158,6 +158,43 @@ function CampaignControlCentre() {
   );
 }
 
+function AgentOperations() {
+  const [agentStatus, setAgentStatus] = useState(null);
+  const [runs, setRuns] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    async function refresh() {
+      try {
+        const [status, history] = await Promise.all([api("/api/agents/status"), api("/api/agents/runs?limit=8")]);
+        if (active) { setAgentStatus(status); setRuns(history.runs); }
+      } catch { /* The main commerce UI remains available if observability is temporarily unavailable. */ }
+    }
+    refresh();
+    const timer = window.setInterval(refresh, 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  return (
+    <section aria-labelledby="agent-operations-heading" className="mb-7 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><p className="text-xs font-black tracking-[0.18em] text-cyan-300">LIVE LANGGRAPH RUNTIME</p><h2 id="agent-operations-heading" className="mt-2 text-xl font-black">Agent Operations</h2><p className="mt-1 text-sm text-slate-400">Every card below is a real graph run with node-level state transitions.</p></div>
+        <div className="flex flex-wrap gap-2"><span className="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-200">{agentStatus?.framework ?? "Connecting…"}</span><span className={`rounded-full px-3 py-1 text-xs font-bold ${agentStatus?.llmEnabled ? "bg-emerald-400/10 text-emerald-300" : "bg-slate-400/10 text-slate-400"}`}>LLM {agentStatus?.llmEnabled ? `${agentStatus.model} enabled` : "optional · off"}</span></div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">{(agentStatus?.workflows ?? ["shopping", "recommendation", "checkout", "campaign"]).map((workflow) => <span key={workflow} className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-bold capitalize text-slate-300">{workflow} graph</span>)}</div>
+      {!runs.length ? <p className="mt-5 rounded-xl border border-dashed border-white/10 p-5 text-center text-sm text-slate-500">No runs yet. Ask the shopping agent, add an item, approve checkout, or generate a campaign to watch agents execute.</p> : (
+        <div className="mt-5 grid gap-3 lg:grid-cols-2">{runs.map((run) => (
+          <article key={run.id} className="rounded-xl border border-white/10 bg-slate-950/70 p-4">
+            <div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-slate-500">{run.workflow} workflow</p><p className="mt-1 text-sm font-bold text-white">Run {run.id.slice(0, 8)}</p></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${run.status === "completed" ? "bg-emerald-400/10 text-emerald-300" : run.status === "failed" ? "bg-rose-400/10 text-rose-300" : "bg-amber-400/10 text-amber-300"}`}>{run.status}</span></div>
+            <div className="mt-4 flex flex-wrap gap-2">{run.events.map((event) => <span key={event.id} title={JSON.stringify(event.details)} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${event.status === "completed" ? "border-emerald-400/20 text-emerald-200" : event.status === "failed" ? "border-rose-400/20 text-rose-200" : "border-amber-400/20 text-amber-200"}`}>{event.agent} · {event.status}</span>)}</div>
+            {run.llmUsed && <p className="mt-3 text-[11px] text-cyan-300">Optional LLM response node enabled; financial tools remained deterministic.</p>}
+          </article>
+        ))}</div>
+      )}
+    </section>
+  );
+}
+
 export default function App() {
   const [filters, setFilters] = useState({ query: "", maxPrice: "", inStock: true });
   const [products, setProducts] = useState([]);
@@ -276,6 +313,7 @@ export default function App() {
           <h1 className="mt-4 max-w-4xl text-5xl font-black leading-[.94] tracking-[-.055em] sm:text-7xl md:text-8xl">Shop through a guarded agent.</h1>
           <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-400">Describe what you need. The agent interprets constraints, searches verified merchant records, and creates a test order only after you approve the exact total.</p>
         </header>
+        <AgentOperations />
         {notice && <div role="status" className="mb-5 rounded-xl border border-blue-400/20 bg-blue-400/10 px-4 py-3 text-sm text-blue-100">{notice}</div>}
         <main className="grid gap-6 lg:grid-cols-[1fr_340px]">
           <div className="space-y-6">

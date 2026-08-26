@@ -60,7 +60,10 @@ export class RazorpayPaymentProvider {
 }
 
 export function paymentProviderFromEnv(env = process.env) {
-  if (env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET) {
+  if (env.PAYMENT_MODE === "razorpay") {
+    if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+      throw new Error("PAYMENT_MODE=razorpay requires RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET");
+    }
     return new RazorpayPaymentProvider({ keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET });
   }
   return new SimulatedPaymentProvider();

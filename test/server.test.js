@@ -5,7 +5,7 @@ import { once } from "node:events";
 import { createApp } from "../src/server.js";
 
 async function withServer(run, options = {}) {
-  const server = createApp(options);
+  const server = createApp({ agentEnv: {}, ...options });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
@@ -141,4 +141,15 @@ test("verifies Razorpay Checkout signature before marking the bound session paid
     }
   },
   paymentVerificationSecret: "test_key_secret"
+}));
+
+test("exposes completed LangGraph agent runs after a shopping task", () => withServer(async (baseUrl) => {
+  const session = await (await post(baseUrl, "/api/sessions", { spendingLimit: 2000 })).json();
+  await post(baseUrl, `/api/sessions/${session.id}/messages`, { message: "I need a skincare gift under ₹1,000" });
+  const response = await fetch(`${baseUrl}/api/agents/runs`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.runs[0].workflow, "shopping");
+  assert.equal(body.runs[0].status, "completed");
+  assert.ok(body.runs[0].events.some(({ agent }) => agent === "catalogue-agent"));
 }));

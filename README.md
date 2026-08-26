@@ -2,6 +2,19 @@
 
 Phase 4 completes the incremental Razorpay Buildathon roadmap. It combines the authoritative catalogue, conversational checkout, and explainable recommendations with a campaign orchestrator that detects measured revenue gaps, enforces merchant policies, requires human approval, monitors performance, and triggers stop-loss automatically.
 
+## LangGraph agents
+
+The backend uses real compiled LangGraph `StateGraph` workflows rather than frontend-only agent labels:
+
+- Shopping: intent-agent → catalogue-agent → guardrail-agent → response-agent
+- Recommendations: cart-context-agent → recommendation-agent → revenue-guard-agent
+- Checkout: cart-agent → risk-agent → payment-agent → audit-agent
+- Campaigns: opportunity-agent → campaign-agent → compliance-agent → campaign-audit-agent
+
+`GET /api/agents/status` reports runtime configuration and `GET /api/agents/runs` returns redacted node-level execution history. The React Agent Operations panel polls these endpoints and displays running, completed, and failed nodes.
+
+`OPENAI_API_KEY` is optional. When configured, only the final shopping response-agent uses the model, grounded exclusively in products already returned by deterministic catalogue tools. Authentication, quota, or network failures fall back to the deterministic response. Prices, inventory, cart totals, recommendations, campaign policies, approvals, payment creation, and payment verification never depend on the LLM.
+
 ## Run locally
 
 Requires Node.js 20 or newer. There are currently no third-party dependencies.
@@ -40,13 +53,15 @@ For development, run `npm run dev`. Vite serves React on <http://localhost:5173>
 - `POST /api/campaigns/:id/launch`
 - `POST /api/campaigns/:id/performance`
 - `POST /api/webhooks/razorpay`
+- `GET /api/agents/status`
+- `GET /api/agents/runs`
 
 ## Razorpay test mode
 
 The app uses safe simulation when credentials are absent. To enable the actual Razorpay payment gateway:
 
 1. Copy `.env.example` to `.env`.
-2. Replace the placeholders with a Razorpay **test-mode** key ID, key secret, and webhook secret.
+2. Set `PAYMENT_MODE=razorpay` and replace the placeholders with a Razorpay **test-mode** key ID, key secret, and webhook secret. Keep `PAYMENT_MODE=simulation` until the credentials are valid.
 3. Run `npm run build && npm start`.
 4. Complete a cart and approve its exact total. The React app will load Razorpay Checkout only after the server creates a real test order.
 
