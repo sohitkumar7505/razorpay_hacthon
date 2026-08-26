@@ -3,3 +3,8 @@ node_modules/
 .DS_Store
 coverage/
 dist/
+demo-video/*.mov
+demo-video/live-sample.jpg
+demo-video/list_windows.swift
+demo-video/liveframes/rendered/
+demo-video/liveframes/contact.jpg
