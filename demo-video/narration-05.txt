@@ -1,1 +1,0 @@
-The merchant console makes agent execution visible. Every LangGraph workflow records node-level running, completed, and failed states with sensitive values redacted. Merchants can inspect shopping, recommendation, checkout, and campaign workflows instead of trusting an invisible black box.

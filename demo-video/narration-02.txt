@@ -1,1 +1,0 @@
-The shopping agent remembers product type, use case, and budget across turns. LangGraph separates intent, preferences, catalogue search, ranking, clarification, guardrails, and response generation. Suggestions use only verified products, prices, stock, shipping time, and return rules.

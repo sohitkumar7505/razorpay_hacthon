@@ -1,1 +1,0 @@
-Introducing Guarded Agentic Commerce, an end-to-end Razorpay Buildathon project. It combines a shopkeeper-style AI storefront with a merchant growth console, while keeping every price, inventory update, campaign, and payment bounded and explainable.

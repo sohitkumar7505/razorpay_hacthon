@@ -1,1 +1,0 @@
-Merchants can add, edit, delete, or import catalogue products with clearly labelled fields and row-level validation. They can control maximum spending, discount limits, approval thresholds, prohibited products, shipping policy, and return policy. Products and settings persist in Dockerized PostgreSQL.
