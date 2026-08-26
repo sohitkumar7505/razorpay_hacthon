@@ -29,6 +29,7 @@ For development, run `npm run dev`. Vite serves React on <http://localhost:5173>
 - `POST /api/sessions/:id/cart`
 - `DELETE /api/sessions/:id/cart/:productId`
 - `POST /api/sessions/:id/checkout`
+- `POST /api/sessions/:id/payment/verify`
 - `GET /api/sessions/:id/recommendations`
 - `POST /api/sessions/:id/recommendations/:productId`
 - `GET /api/recommendations/metrics`
@@ -42,11 +43,20 @@ For development, run `npm run dev`. Vite serves React on <http://localhost:5173>
 
 ## Razorpay test mode
 
-The app uses safe simulation when credentials are absent. Copy `.env.example` to `.env` and provide `rzp_test_...` credentials to create Razorpay test orders. Live key IDs are rejected. Configure the webhook endpoint as `/api/webhooks/razorpay` with the same webhook secret.
+The app uses safe simulation when credentials are absent. To enable the actual Razorpay payment gateway:
+
+1. Copy `.env.example` to `.env`.
+2. Replace the placeholders with a Razorpay **test-mode** key ID, key secret, and webhook secret.
+3. Run `npm run build && npm start`.
+4. Complete a cart and approve its exact total. The React app will load Razorpay Checkout only after the server creates a real test order.
+
+Live key IDs are rejected. The key secret never reaches React. After Checkout returns, the server verifies `razorpay_order_id|razorpay_payment_id` using HMAC-SHA256 and binds the order to its originating shopping session before marking it paid. The signed webhook at `/api/webhooks/razorpay` provides an independent, idempotent confirmation path.
+
+For local webhook testing, expose port 3000 through a secure tunnel and configure the resulting HTTPS `/api/webhooks/razorpay` URL in the Razorpay test dashboard. Never commit `.env`.
 
 ## TDD acceptance contract
 
-Tests verify bounded intent parsing, authoritative inventory and pricing, exact-total approval, signed webhooks, compatible recommendations, recommendation metrics, evidence-backed campaign opportunities, policy enforcement, human approval, lifecycle transitions, hard budget caps, measured ROAS, automatic stop-loss, API readiness, and malformed-input handling.
+Tests verify bounded intent parsing, authoritative inventory and pricing, exact-total approval, Razorpay order creation, Checkout option isolation, payment HMAC verification, session/order binding, signed webhooks, compatible recommendations, recommendation metrics, evidence-backed campaign opportunities, policy enforcement, human approval, lifecycle transitions, hard budget caps, measured ROAS, automatic stop-loss, API readiness, and malformed-input handling.
 
 ## Current boundary
 

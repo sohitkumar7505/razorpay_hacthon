@@ -1,10 +1,19 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
-export function verifyWebhookSignature(body, signature, secret) {
+function verifyHexHmac(message, signature, secret) {
   if (!secret || typeof signature !== "string" || !/^[a-f0-9]{64}$/i.test(signature)) return false;
-  const expected = createHmac("sha256", secret).update(body).digest();
+  const expected = createHmac("sha256", secret).update(message).digest();
   const received = Buffer.from(signature, "hex");
   return received.length === expected.length && timingSafeEqual(received, expected);
+}
+
+export function verifyWebhookSignature(body, signature, secret) {
+  return verifyHexHmac(body, signature, secret);
+}
+
+export function verifyPaymentSignature({ orderId, paymentId, signature }, secret) {
+  if (typeof orderId !== "string" || !orderId || typeof paymentId !== "string" || !paymentId) return false;
+  return verifyHexHmac(`${orderId}|${paymentId}`, signature, secret);
 }
 
 export class SimulatedPaymentProvider {

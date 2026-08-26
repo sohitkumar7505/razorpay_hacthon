@@ -1,11 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { buildSearchParams, formatMoney } from "./catalogue-ui.js";
+import { buildRazorpayOptions, buildSearchParams, formatMoney } from "./catalogue-ui.js";
 
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: options.body ? { "content-type": "application/json", ...options.headers } : options.headers });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error ?? "Request failed");
   return body;
+}
+
+let razorpayScriptPromise;
+function loadRazorpayCheckout() {
+  if (window.Razorpay) return Promise.resolve(window.Razorpay);
+  if (razorpayScriptPromise) return razorpayScriptPromise;
+  razorpayScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => window.Razorpay ? resolve(window.Razorpay) : reject(new Error("Razorpay Checkout did not initialize"));
+    script.onerror = () => reject(new Error("Unable to load Razorpay Checkout"));
+    document.head.append(script);
+  });
+  return razorpayScriptPromise;
 }
 
 function Metric({ label, value }) {
@@ -224,7 +239,26 @@ export default function App() {
     setBusy(true); setNotice("");
     try {
       const body = await api(`/api/sessions/${session.id}/checkout`, { method: "POST", body: JSON.stringify({ approvedTotal: session.cart.total }) });
-      await refreshSession(); setNotice(body.paymentOrder.simulated ? "Test order safely simulated. Configure Razorpay test credentials for a real test order." : "Razorpay test order created.");
+      await refreshSession();
+      if (body.paymentOrder.simulated) {
+        setNotice("Test order safely simulated. Configure Razorpay test credentials to open the payment gateway.");
+      } else {
+        const RazorpayCheckout = await loadRazorpayCheckout();
+        const options = buildRazorpayOptions(
+          body.paymentOrder,
+          async (payment) => {
+            setBusy(true); setNotice("Verifying payment signature…");
+            try {
+              await api(`/api/sessions/${session.id}/payment/verify`, { method: "POST", body: JSON.stringify(payment) });
+              await refreshSession(); setNotice("Payment verified securely. Order is confirmed.");
+            } catch (error) { setNotice(`Payment could not be verified: ${error.message}`); }
+            finally { setBusy(false); }
+          },
+          () => setNotice("Razorpay Checkout was closed. No payment status was changed.")
+        );
+        new RazorpayCheckout(options).open();
+        setNotice("Razorpay test checkout opened. Use Razorpay test payment details only.");
+      }
     } catch (error) { setNotice(error.message); } finally { setBusy(false); }
   }
 

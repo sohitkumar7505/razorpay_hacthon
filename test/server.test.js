@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { once } from "node:events";
 import { createApp } from "../src/server.js";
 
-async function withServer(run) {
-  const server = createApp();
+async function withServer(run, options = {}) {
+  const server = createApp(options);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
@@ -112,4 +113,32 @@ test("campaign API enforces proposal, approval, launch and stop-loss lifecycle",
   });
   assert.equal(performance.status, 200);
   assert.equal((await performance.json()).status, "paused_stop_loss");
+}));
+
+test("verifies Razorpay Checkout signature before marking the bound session paid", () => withServer(async (baseUrl) => {
+  const session = await (await post(baseUrl, "/api/sessions", { spendingLimit: 2000 })).json();
+  await post(baseUrl, `/api/sessions/${session.id}/cart`, { productId: "serum-01", quantity: 1 });
+  const checkout = await (await post(baseUrl, `/api/sessions/${session.id}/checkout`, { approvedTotal: 799 })).json();
+  const orderId = checkout.paymentOrder.id;
+  const paymentId = "pay_test_456";
+  const signature = createHmac("sha256", "test_key_secret").update(`${orderId}|${paymentId}`).digest("hex");
+
+  const invalid = await post(baseUrl, `/api/sessions/${session.id}/payment/verify`, {
+    razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: "0".repeat(64)
+  });
+  assert.equal(invalid.status, 401);
+
+  const verified = await post(baseUrl, `/api/sessions/${session.id}/payment/verify`, {
+    razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: signature
+  });
+  assert.equal(verified.status, 200);
+  assert.equal((await verified.json()).status, "paid");
+}, {
+  payments: {
+    mode: "razorpay_test",
+    async createOrder(order) {
+      return { id: "order_test_gateway", ...order, status: "created", simulated: false, keyId: "rzp_test_public" };
+    }
+  },
+  paymentVerificationSecret: "test_key_secret"
 }));

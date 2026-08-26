@@ -208,9 +208,12 @@ export class CommerceService {
     return clone(session.checkout);
   }
 
-  recordPayment(orderId, paymentId) {
+  recordPayment(orderId, paymentId, expectedSessionId) {
     const sessionId = this.#orders.get(orderId);
     if (!sessionId) throw new ValidationError(`Payment order not found: ${orderId}`);
+    if (expectedSessionId !== undefined && sessionId !== expectedSessionId) {
+      throw new ValidationError("Payment order does not belong to this shopping session");
+    }
     const session = this.#session(sessionId);
     if (session.checkout.status !== "paid") {
       session.checkout.status = "paid";

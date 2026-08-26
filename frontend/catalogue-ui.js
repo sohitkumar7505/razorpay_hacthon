@@ -14,3 +14,17 @@ export function formatMoney(value) {
     maximumFractionDigits: 0
   }).format(value);
 }
+
+export function buildRazorpayOptions(paymentOrder, handler, onDismiss) {
+  return {
+    key: paymentOrder.keyId,
+    order_id: paymentOrder.id,
+    amount: paymentOrder.amount,
+    currency: paymentOrder.currency,
+    name: "Guarded Commerce Demo",
+    description: "Razorpay Buildathon test-mode purchase",
+    handler,
+    modal: { ondismiss: onDismiss },
+    theme: { color: "#2563eb" }
+  };
+}

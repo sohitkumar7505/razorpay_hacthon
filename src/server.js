@@ -5,7 +5,7 @@ import { dirname, extname, join, normalize } from "node:path";
 import { Catalogue, ValidationError } from "./catalogue.js";
 import { CampaignOrchestrator, defaultPerformanceData } from "./campaigns.js";
 import { CommerceService } from "./commerce.js";
-import { paymentProviderFromEnv, verifyWebhookSignature } from "./payment.js";
+import { paymentProviderFromEnv, verifyPaymentSignature, verifyWebhookSignature } from "./payment.js";
 import { seedProducts } from "./seed.js";
 
 const publicDir = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
@@ -66,6 +66,7 @@ export function createApp({
   catalogue = new Catalogue(seedProducts),
   payments = paymentProviderFromEnv(),
   webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET,
+  paymentVerificationSecret = process.env.RAZORPAY_KEY_SECRET,
   campaignPerformance = defaultPerformanceData
 } = {}) {
   const commerce = new CommerceService(catalogue, payments);
@@ -164,6 +165,22 @@ export function createApp({
       const campaignPerformanceMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/performance$/);
       if (request.method === "POST" && campaignPerformanceMatch) {
         return json(response, 200, campaigns.recordPerformance(decodeURIComponent(campaignPerformanceMatch[1]), await requestBody(request)));
+      }
+      const paymentVerificationMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/payment\/verify$/);
+      if (request.method === "POST" && paymentVerificationMatch) {
+        const body = await requestBody(request);
+        const verification = {
+          orderId: body.razorpay_order_id,
+          paymentId: body.razorpay_payment_id,
+          signature: body.razorpay_signature
+        };
+        if (!paymentVerificationSecret) return json(response, 503, { error: "Razorpay payment verification is not configured" });
+        if (!verifyPaymentSignature(verification, paymentVerificationSecret)) return json(response, 401, { error: "Invalid Razorpay payment signature" });
+        return json(response, 200, commerce.recordPayment(
+          verification.orderId,
+          verification.paymentId,
+          decodeURIComponent(paymentVerificationMatch[1])
+        ));
       }
       if (request.method === "POST" && url.pathname === "/api/webhooks/razorpay") {
         const body = await requestBody(request, { raw: true });

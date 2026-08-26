@@ -65,6 +65,16 @@ test("paid webhook updates a known order and ignores duplicate delivery", async 
   assert.throws(() => service.recordPayment("unknown", "pay_404"), ValidationError);
 });
 
+test("binds a verified payment to the session that created its order", async () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const first = service.createSession();
+  const second = service.createSession();
+  service.addToCart(first.id, "serum-01", 1);
+  await service.approveCheckout(first.id, 799);
+  assert.throws(() => service.recordPayment("order_test_123", "pay_123", second.id), /session/i);
+  assert.equal(service.recordPayment("order_test_123", "pay_123", first.id).status, "paid");
+});
+
 test("recommends only compatible, in-stock add-ons within the remaining budget", () => {
   const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
   const session = service.createSession({ spendingLimit: 2000 });
