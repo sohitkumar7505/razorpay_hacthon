@@ -4,7 +4,7 @@ An AI storefront and merchant growth platform built for the Razorpay Buildathon.
 
 ## Demo video
 
-The silent, captioned hackathon walkthrough is available at [`demo-video/guarded-agentic-commerce-submission.mp4`](demo-video/guarded-agentic-commerce-submission.mp4). It uses screens captured during actual UI interactions and shows conversational shopping, cart updates, explainable recommendations, Razorpay test checkout, LangGraph execution, catalogue management, merchant guardrails, PostgreSQL persistence, and a campaign being approved and launched.
+The detailed, silent 1080p hackathon walkthrough is available at [`demo-video/guarded-agentic-commerce-submission.mp4`](demo-video/guarded-agentic-commerce-submission.mp4). It uses screens captured during actual UI interactions and explains every step: conversational search, remembered refinement, in-chat products, guarded cart updates, recommendation acceptance, Razorpay test checkout, LangGraph execution, catalogue creation, merchant guardrails, campaign approval and launch, and automatic stop-loss.
 
 ## What is implemented
 
