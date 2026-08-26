@@ -4,12 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch src/server.js",
+    "dev": "node scripts/dev.js",
+    "dev:api": "node --watch src/server.js",
+    "dev:web": "vite",
+    "build": "vite build",
     "start": "node src/server.js",
     "test": "node --test",
     "test:watch": "node --test --watch"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.2",
+    "@tailwindcss/vite": "^4.1.12",
+    "tailwindcss": "^4.1.12",
+    "vite": "^7.1.3"
   }
 }

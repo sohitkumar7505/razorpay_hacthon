@@ -5,8 +5,13 @@ import { dirname, extname, join, normalize } from "node:path";
 import { Catalogue, ValidationError } from "./catalogue.js";
 import { seedProducts } from "./seed.js";
 
-const publicDir = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
-const contentTypes = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
+const publicDir = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+const contentTypes = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".svg": "image/svg+xml"
+};
 
 function json(response, status, body) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -19,6 +24,17 @@ async function staticFile(pathname, response) {
   try {
     const body = await readFile(join(publicDir, relative));
     response.writeHead(200, { "content-type": contentTypes[extname(relative)] ?? "application/octet-stream" });
+    response.end(body);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function appShell(response) {
+  try {
+    const body = await readFile(join(publicDir, "index.html"));
+    response.writeHead(200, { "content-type": contentTypes[".html"] });
     response.end(body);
     return true;
   } catch {
@@ -56,6 +72,7 @@ export function createApp({ catalogue = new Catalogue(seedProducts) } = {}) {
         return json(response, 200, { events: catalogue.auditLog() });
       }
       if (request.method === "GET" && await staticFile(url.pathname, response)) return;
+      if (request.method === "GET" && !url.pathname.startsWith("/api/") && await appShell(response)) return;
       json(response, 404, { error: "Not found" });
     } catch (error) {
       if (error instanceof ValidationError) return json(response, 400, { error: error.message });
