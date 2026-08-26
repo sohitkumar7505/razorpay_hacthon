@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, extname, join, normalize } from "node:path";
 import { Catalogue, ValidationError } from "./catalogue.js";
+import { CampaignOrchestrator, defaultPerformanceData } from "./campaigns.js";
 import { CommerceService } from "./commerce.js";
 import { paymentProviderFromEnv, verifyWebhookSignature } from "./payment.js";
 import { seedProducts } from "./seed.js";
@@ -64,9 +65,11 @@ async function appShell(response) {
 export function createApp({
   catalogue = new Catalogue(seedProducts),
   payments = paymentProviderFromEnv(),
-  webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET
+  webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET,
+  campaignPerformance = defaultPerformanceData
 } = {}) {
   const commerce = new CommerceService(catalogue, payments);
+  const campaigns = new CampaignOrchestrator(catalogue, campaignPerformance);
   return createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     try {
@@ -93,7 +96,7 @@ export function createApp({
         return json(response, 200, catalogue.checkInventory(decodeURIComponent(inventoryMatch[1]), quantity));
       }
       if (request.method === "GET" && url.pathname === "/api/audit") {
-        return json(response, 200, { events: [...catalogue.auditLog(), ...commerce.auditLog()].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) });
+        return json(response, 200, { events: [...catalogue.auditLog(), ...commerce.auditLog(), ...campaigns.auditLog()].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) });
       }
       if (request.method === "POST" && url.pathname === "/api/sessions") {
         return json(response, 201, commerce.createSession(await requestBody(request)));
@@ -136,6 +139,31 @@ export function createApp({
       }
       if (request.method === "GET" && url.pathname === "/api/recommendations/metrics") {
         return json(response, 200, commerce.recommendationMetrics());
+      }
+      if (request.method === "GET" && url.pathname === "/api/campaigns/opportunities") {
+        return json(response, 200, { opportunities: campaigns.opportunities() });
+      }
+      if (request.method === "GET" && url.pathname === "/api/campaigns") {
+        return json(response, 200, { campaigns: campaigns.list() });
+      }
+      if (request.method === "POST" && url.pathname === "/api/campaigns") {
+        return json(response, 201, campaigns.createProposal(await requestBody(request)));
+      }
+      const campaignMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)$/);
+      if (request.method === "GET" && campaignMatch) {
+        return json(response, 200, campaigns.get(decodeURIComponent(campaignMatch[1])));
+      }
+      const campaignApproveMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/approve$/);
+      if (request.method === "POST" && campaignApproveMatch) {
+        return json(response, 200, campaigns.approve(decodeURIComponent(campaignApproveMatch[1]), await requestBody(request)));
+      }
+      const campaignLaunchMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/launch$/);
+      if (request.method === "POST" && campaignLaunchMatch) {
+        return json(response, 200, campaigns.launch(decodeURIComponent(campaignLaunchMatch[1])));
+      }
+      const campaignPerformanceMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/performance$/);
+      if (request.method === "POST" && campaignPerformanceMatch) {
+        return json(response, 200, campaigns.recordPerformance(decodeURIComponent(campaignPerformanceMatch[1]), await requestBody(request)));
       }
       if (request.method === "POST" && url.pathname === "/api/webhooks/razorpay") {
         const body = await requestBody(request, { raw: true });

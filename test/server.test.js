@@ -90,3 +90,26 @@ test("recommendation API explains an add-on and tracks acceptance", () => withSe
   assert.equal(result.cart.total, 998);
   assert.equal(result.metrics.incrementalRevenue, 199);
 }));
+
+test("campaign API enforces proposal, approval, launch and stop-loss lifecycle", () => withServer(async (baseUrl) => {
+  const opportunities = await (await fetch(`${baseUrl}/api/campaigns/opportunities`)).json();
+  assert.equal(opportunities.opportunities[0].product.id, "cream-01");
+
+  const proposed = await post(baseUrl, "/api/campaigns", {
+    productId: "cream-01", budget: 1500, discountPercent: 10,
+    audience: "consented_cart_abandoners", channel: "email", maxMessagesPerCustomer: 1
+  });
+  assert.equal(proposed.status, 201);
+  const campaign = await proposed.json();
+
+  const premature = await post(baseUrl, `/api/campaigns/${campaign.id}/launch`, {});
+  assert.equal(premature.status, 400);
+
+  assert.equal((await post(baseUrl, `/api/campaigns/${campaign.id}/approve`, { approvedBy: "merchant-demo" })).status, 200);
+  assert.equal((await post(baseUrl, `/api/campaigns/${campaign.id}/launch`, {})).status, 200);
+  const performance = await post(baseUrl, `/api/campaigns/${campaign.id}/performance`, {
+    spend: 600, impressions: 1000, clicks: 10, conversions: 0, revenue: 0
+  });
+  assert.equal(performance.status, 200);
+  assert.equal((await performance.json()).status, "paused_stop_loss");
+}));

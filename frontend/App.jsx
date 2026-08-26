@@ -66,6 +66,83 @@ function RecommendationPanel({ recommendations, metrics, busy, onDecision }) {
   );
 }
 
+function CampaignControlCentre() {
+  const [opportunities, setOpportunities] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [campaign, setCampaign] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    api("/api/campaigns/opportunities").then(({ opportunities: items }) => {
+      setOpportunities(items);
+      setSelectedProduct(items[0]?.product.id ?? "");
+    }).catch((error) => setNotice(error.message));
+  }, []);
+
+  async function action(label, callback) {
+    setBusy(true); setNotice("");
+    try { setCampaign(await callback()); setNotice(label); }
+    catch (error) { setNotice(error.message); }
+    finally { setBusy(false); }
+  }
+
+  function propose(event) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    action("Policy-compliant draft created. Human approval is still required.", () => api("/api/campaigns", {
+      method: "POST",
+      body: JSON.stringify({
+        productId: selectedProduct,
+        budget: Number(data.get("budget")),
+        discountPercent: Number(data.get("discountPercent")),
+        audience: "consented_cart_abandoners",
+        channel: data.get("channel"),
+        maxMessagesPerCustomer: 1
+      })
+    }));
+  }
+
+  return (
+    <section aria-labelledby="campaign-heading" className="mt-10 overflow-hidden rounded-3xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 via-slate-900/90 to-slate-950 shadow-2xl shadow-black/40">
+      <div className="border-b border-white/10 p-6 md:p-8"><p className="text-xs font-black tracking-[0.2em] text-amber-300">PHASE 4 · AUTONOMOUS CAMPAIGN ORCHESTRATOR</p><h2 id="campaign-heading" className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Turn a measured revenue gap into a bounded campaign.</h2><p className="mt-3 max-w-3xl leading-7 text-slate-400">The orchestrator detects weak conversion, proposes a consented campaign, waits for merchant approval, and pauses itself when performance breaches stop-loss rules.</p></div>
+      <div className="grid gap-6 p-6 md:p-8 lg:grid-cols-[1fr_1.15fr]">
+        <div>
+          <h3 className="font-extrabold text-white">Detected opportunities</h3>
+          <div className="mt-4 space-y-3">{opportunities.map((item) => (
+            <button key={item.product.id} onClick={() => setSelectedProduct(item.product.id)} className={`w-full rounded-xl border p-4 text-left transition ${selectedProduct === item.product.id ? "border-amber-300/50 bg-amber-300/10" : "border-white/10 bg-black/20 hover:border-white/20"}`}>
+              <div className="flex justify-between gap-4"><strong>{item.product.name}</strong><span className="text-sm font-black text-amber-300">{formatMoney(item.estimatedRevenueGap)} gap</span></div>
+              <p className="mt-2 text-xs text-slate-400">Conversion {(item.conversionRate * 100).toFixed(1)}% · Benchmark {(item.benchmarkConversionRate * 100).toFixed(1)}% · {item.evidence.views.toLocaleString("en-IN")} measured views</p>
+            </button>
+          ))}</div>
+          <form onSubmit={propose} className="mt-5 grid grid-cols-2 gap-3">
+            <label className="grid gap-2 text-xs font-bold text-slate-400">Campaign budget (₹)<input name="budget" type="number" min="1" max="5000" defaultValue="1500" className="rounded-lg border border-white/15 bg-black/30 px-3 py-2.5 text-base text-white" /></label>
+            <label className="grid gap-2 text-xs font-bold text-slate-400">Discount (%)<input name="discountPercent" type="number" min="0" max="20" defaultValue="10" className="rounded-lg border border-white/15 bg-black/30 px-3 py-2.5 text-base text-white" /></label>
+            <label className="col-span-2 grid gap-2 text-xs font-bold text-slate-400">Approved channel<select name="channel" defaultValue="email" className="rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-base text-white"><option value="email">Email</option><option value="whatsapp">WhatsApp</option></select></label>
+            <button disabled={!selectedProduct || busy} className="col-span-2 rounded-xl bg-amber-300 px-4 py-3 font-black text-amber-950 hover:bg-amber-200 disabled:opacity-50">Generate bounded proposal</button>
+          </form>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
+          {!campaign ? <div className="grid min-h-80 place-items-center text-center text-sm text-slate-500"><p>Select an evidence-backed opportunity and generate a campaign proposal.</p></div> : (
+            <div>
+              <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-slate-500">Campaign status</p><p className="mt-1 text-xl font-black capitalize text-white">{campaign.status.replaceAll("_", " ")}</p></div><span className={`rounded-full px-3 py-1 text-xs font-black ${campaign.policyCheck.passed ? "bg-emerald-400/10 text-emerald-300" : "bg-rose-400/10 text-rose-300"}`}>Policy {campaign.policyCheck.passed ? "passed" : "blocked"}</span></div>
+              <p className="mt-5 rounded-xl bg-white/5 p-4 text-sm leading-6 text-slate-300">{campaign.rationale}</p>
+              <div className="mt-4"><p className="text-xs font-black uppercase tracking-widest text-slate-500">Generated message</p><p className="mt-2 rounded-xl border border-white/10 p-4 text-sm leading-6 text-slate-300">{campaign.message}</p></div>
+              <dl className="mt-5 grid grid-cols-3 gap-3"><Metric label="Budget" value={formatMoney(campaign.budget)} /><Metric label="Discount" value={`${campaign.discountPercent}%`} /><Metric label="Frequency cap" value={`${campaign.maxMessagesPerCustomer}×`} /></dl>
+              {campaign.status === "draft" && <button disabled={busy} onClick={() => action("Merchant approval recorded with timestamp.", () => api(`/api/campaigns/${campaign.id}/approve`, { method: "POST", body: JSON.stringify({ approvedBy: "merchant-demo" }) }))} className="mt-5 w-full rounded-xl bg-blue-500 px-4 py-3 font-black text-white hover:bg-blue-400">Approve as merchant</button>}
+              {campaign.status === "approved" && <button disabled={busy} onClick={() => action("Campaign launched inside policy boundaries.", () => api(`/api/campaigns/${campaign.id}/launch`, { method: "POST", body: "{}" }))} className="mt-5 w-full rounded-xl bg-emerald-400 px-4 py-3 font-black text-emerald-950 hover:bg-emerald-300">Launch simulated campaign</button>}
+              {campaign.status === "active" && <div className="mt-5 grid grid-cols-2 gap-3"><button disabled={busy} onClick={() => action("Healthy performance batch recorded.", () => api(`/api/campaigns/${campaign.id}/performance`, { method: "POST", body: JSON.stringify({ spend: 400, impressions: 1000, clicks: 120, conversions: 10, revenue: 12990 }) }))} className="rounded-xl bg-emerald-400 px-3 py-3 text-sm font-black text-emerald-950">Simulate healthy batch</button><button disabled={busy} onClick={() => action("Poor batch recorded; stop-loss evaluated.", () => api(`/api/campaigns/${campaign.id}/performance`, { method: "POST", body: JSON.stringify({ spend: 600, impressions: 1000, clicks: 10, conversions: 0, revenue: 0 }) }))} className="rounded-xl bg-rose-400 px-3 py-3 text-sm font-black text-rose-950">Simulate poor batch</button></div>}
+              {(campaign.performance.spend > 0 || campaign.stopReason) && <div className="mt-5 rounded-xl border border-white/10 p-4"><div className="grid grid-cols-3 gap-3"><Metric label="Spend" value={formatMoney(campaign.performance.spend)} /><Metric label="Revenue" value={formatMoney(campaign.performance.revenue)} /><Metric label="ROAS" value={`${campaign.report.roas.toFixed(2)}×`} /></div>{campaign.stopReason && <p className="mt-4 rounded-lg bg-rose-400/10 px-3 py-2 text-sm font-bold text-rose-200">{campaign.stopReason}</p>}</div>}
+            </div>
+          )}
+          {notice && <p role="status" className="mt-4 text-sm text-amber-200">{notice}</p>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [filters, setFilters] = useState({ query: "", maxPrice: "", inStock: true });
   const [products, setProducts] = useState([]);
@@ -161,7 +238,7 @@ export default function App() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_80%_0%,rgba(55,85,150,.45),transparent_34rem)]" />
       <div className="relative mx-auto w-[min(1180px,calc(100%-36px))]">
         <header className="pb-12 pt-14 md:pt-20">
-          <div className="flex flex-wrap items-center gap-3"><p className="text-xs font-black tracking-[0.2em] text-blue-400">RAZORPAY BUILDATHON</p><span className="rounded-full border border-violet-400/30 px-3 py-1 text-[11px] font-bold text-violet-200">PHASE 3 · REVENUE-AWARE COMMERCE</span></div>
+          <div className="flex flex-wrap items-center gap-3"><p className="text-xs font-black tracking-[0.2em] text-blue-400">RAZORPAY BUILDATHON</p><span className="rounded-full border border-amber-400/30 px-3 py-1 text-[11px] font-bold text-amber-200">PHASE 4 · COMPLETE AGENTIC COMMERCE</span></div>
           <h1 className="mt-4 max-w-4xl text-5xl font-black leading-[.94] tracking-[-.055em] sm:text-7xl md:text-8xl">Shop through a guarded agent.</h1>
           <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-400">Describe what you need. The agent interprets constraints, searches verified merchant records, and creates a test order only after you approve the exact total.</p>
         </header>
@@ -186,7 +263,8 @@ export default function App() {
           </div>
           <Cart session={session} busy={busy} onRemove={removeFromCart} onCheckout={checkout} />
         </main>
-        <footer className="flex flex-wrap justify-between gap-3 py-12 text-sm text-slate-600"><span>Every search, cart action, approval and payment event is audited.</span><span>Razorpay test mode only · No live money movement</span></footer>
+        <CampaignControlCentre />
+        <footer className="flex flex-wrap justify-between gap-3 py-12 text-sm text-slate-600"><span>Every search, cart, recommendation, campaign approval and payment event is audited.</span><span>Razorpay test mode · Simulated campaign delivery</span></footer>
       </div>
     </div>
   );

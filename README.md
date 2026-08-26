@@ -1,6 +1,6 @@
 # Guarded Conversational Commerce
 
-Phase 3 of an incremental Razorpay Buildathon project. It combines the authoritative catalogue and conversational checkout with an explainable upsell/cross-sell engine that respects compatibility, inventory, and the shopper's remaining budget.
+Phase 4 completes the incremental Razorpay Buildathon roadmap. It combines the authoritative catalogue, conversational checkout, and explainable recommendations with a campaign orchestrator that detects measured revenue gaps, enforces merchant policies, requires human approval, monitors performance, and triggers stop-loss automatically.
 
 ## Run locally
 
@@ -32,6 +32,12 @@ For development, run `npm run dev`. Vite serves React on <http://localhost:5173>
 - `GET /api/sessions/:id/recommendations`
 - `POST /api/sessions/:id/recommendations/:productId`
 - `GET /api/recommendations/metrics`
+- `GET /api/campaigns/opportunities`
+- `GET|POST /api/campaigns`
+- `GET /api/campaigns/:id`
+- `POST /api/campaigns/:id/approve`
+- `POST /api/campaigns/:id/launch`
+- `POST /api/campaigns/:id/performance`
 - `POST /api/webhooks/razorpay`
 
 ## Razorpay test mode
@@ -40,8 +46,8 @@ The app uses safe simulation when credentials are absent. Copy `.env.example` to
 
 ## TDD acceptance contract
 
-Tests verify bounded intent parsing, authoritative inventory and pricing, spending-limit enforcement, exact-total approval, idempotent orders, signed webhooks, compatible recommendations, remaining-budget enforcement, unshown-item rejection, recommendation metrics, API readiness, and malformed-input handling.
+Tests verify bounded intent parsing, authoritative inventory and pricing, exact-total approval, signed webhooks, compatible recommendations, recommendation metrics, evidence-backed campaign opportunities, policy enforcement, human approval, lifecycle transitions, hard budget caps, measured ROAS, automatic stop-loss, API readiness, and malformed-input handling.
 
 ## Current boundary
 
-This version deliberately uses validated seed data, deterministic intent parsing, explicit product-compatibility relationships, and an in-memory session store. Persistent storage, learned ranking, authentication, and production payment persistence belong to later releases.
+This demo deliberately uses validated synthetic funnel data and simulated campaign delivery. It never contacts real customers. Persistent storage, live consent systems, authenticated approvers, production channel providers, learned ranking, and production payment persistence are required before a real deployment.
