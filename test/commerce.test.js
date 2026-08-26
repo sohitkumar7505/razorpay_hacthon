@@ -66,6 +66,29 @@ test("shopping memory is isolated between customer sessions", () => {
   assert.equal(unrelated.interpreted.useCase, "gift");
 });
 
+test("executes an unambiguous conversational add-to-cart request", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000 });
+  service.message(session.id, "Show me a skincare cream for night use");
+  const response = service.message(session.id, "add this cream to cart");
+  assert.equal(response.action.type, "cart.added");
+  assert.equal(response.action.productId, "cream-01");
+  assert.equal(response.action.cart.total, 1299);
+  assert.match(response.reply, /added Night Repair Cream/i);
+});
+
+test("asks for a choice instead of adding when a cart reference is ambiguous", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000 });
+  service.message(session.id, "Show me a skincare cream");
+  const response = service.message(session.id, "add a cream to cart");
+  assert.equal(response.action.type, "clarification.required");
+  assert.equal(service.getSession(session.id).cart.items.length, 0);
+  const chosen = service.message(session.id, "add Night Repair Cream to cart");
+  assert.equal(chosen.action.type, "cart.added");
+  assert.equal(chosen.action.productId, "cream-01");
+});
+
 test("cart totals are calculated from catalogue prices and enforce spending limits", () => {
   const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
   const session = service.createSession({ spendingLimit: 1500 });
@@ -156,4 +179,12 @@ test("invalidates recommendation decisions when the cart changes", () => {
   const refreshed = service.getRecommendations(session.id);
   assert.equal(refreshed[0].product.id, "gift-wrap-01");
   assert.equal(service.decideRecommendation(session.id, "gift-wrap-01", "accepted").cart.total, 998);
+});
+
+test("recommends from purchase history even when the current cart is empty", () => {
+  const service = new CommerceService(new Catalogue(seedProducts), new FakePayments());
+  const session = service.createSession({ spendingLimit: 2000, purchaseHistory: ["cleanser-01"] });
+  const recommendations = service.getRecommendations(session.id);
+  assert.ok(recommendations.some(({ product }) => product.id === "face-mask-01"));
+  assert.match(recommendations.find(({ product }) => product.id === "face-mask-01").reason, /past purchase/i);
 });

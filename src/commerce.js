@@ -80,23 +80,25 @@ export class CommerceService {
     return { items, total: items.reduce((sum, item) => sum + item.lineTotal, 0), currency: "INR" };
   }
 
-  createSession({ spendingLimit } = {}) {
+  createSession({ spendingLimit, purchaseHistory = [] } = {}) {
     if (spendingLimit !== undefined && (!Number.isFinite(spendingLimit) || spendingLimit <= 0)) {
       throw new ValidationError("spendingLimit must be a positive number");
     }
+    if (!Array.isArray(purchaseHistory)) throw new ValidationError("purchaseHistory must be an array of product ids");
+    purchaseHistory.forEach((productId) => this.catalogue.get(productId));
     const session = {
       id: randomUUID(), spendingLimit, items: [], messages: [], checkout: null,
       recommendationState: { fingerprint: null, shown: [], decisions: {} },
-      shoppingContext: {}
+      shoppingContext: {}, purchaseHistory: [...new Set(purchaseHistory)], lastSuggestionIds: []
     };
     this.#sessions.set(session.id, session);
-    this.#record("session.created", { sessionId: session.id, spendingLimit });
+    this.#record("session.created", { sessionId: session.id, spendingLimit, purchaseHistory: session.purchaseHistory });
     return this.getSession(session.id);
   }
 
   getSession(id) {
     const session = this.#session(id);
-    return { id: session.id, spendingLimit: session.spendingLimit, messages: clone(session.messages), shoppingContext: clone(session.shoppingContext), cart: this.#cart(session), checkout: clone(session.checkout) };
+    return { id: session.id, spendingLimit: session.spendingLimit, messages: clone(session.messages), shoppingContext: clone(session.shoppingContext), purchaseHistory: clone(session.purchaseHistory), cart: this.#cart(session), checkout: clone(session.checkout) };
   }
 
   previewShoppingContext(sessionId, message) {
@@ -128,6 +130,30 @@ export class CommerceService {
 
   message(sessionId, message) {
     const session = this.#session(sessionId);
+    if (/\b(add|put)\b.*\b(cart|basket)\b/i.test(message)) {
+      const requested = parseShoppingTurn(message);
+      let candidates = session.lastSuggestionIds.map((id) => this.catalogue.get(id));
+      if (requested.productType) candidates = candidates.filter((product) => productText(product).includes(requested.productType));
+      const normalizedMessage = message.toLocaleLowerCase("en-IN");
+      const namedCandidates = candidates.filter((product) => normalizedMessage.includes(product.name.toLocaleLowerCase("en-IN")));
+      if (namedCandidates.length) candidates = namedCandidates;
+      if (candidates.length === 1) {
+        const product = candidates[0];
+        const cart = this.addToCart(sessionId, product.id);
+        const reply = `I added ${product.name} to your cart at the verified price of ₹${product.price}. Your cart total is ₹${cart.total}.`;
+        const action = { type: "cart.added", productId: product.id, cart };
+        session.messages.push({ role: "user", content: message }, { role: "assistant", content: reply });
+        this.#record("conversation.cart_added", { sessionId, productId: product.id, cartTotal: cart.total });
+        return { reply, suggestions: [], interpreted: clone(session.shoppingContext), memoryUsed: true, action };
+      }
+      const reply = candidates.length
+        ? `I found ${candidates.length} matching options. Please choose one by name: ${candidates.map(({ name }) => name).join(" or ")}.`
+        : "I do not have one clear product to add yet. Ask me to show products, then choose one by name.";
+      const action = { type: "clarification.required", candidateIds: candidates.map(({ id }) => id) };
+      session.messages.push({ role: "user", content: message }, { role: "assistant", content: reply });
+      this.#record("conversation.clarification_required", { sessionId, candidateIds: action.candidateIds });
+      return { reply, suggestions: candidates, interpreted: clone(session.shoppingContext), memoryUsed: true, action };
+    }
     const hadContext = Object.keys(session.shoppingContext).length > 0;
     const interpreted = this.previewShoppingContext(sessionId, message);
     session.shoppingContext = interpreted;
@@ -137,6 +163,7 @@ export class CommerceService {
       suggestions = this.#contextualProducts(interpreted, { relaxUseCase: true });
       relaxed = suggestions.length > 0;
     }
+    session.lastSuggestionIds = suggestions.map(({ id }) => id);
     const remembered = describeContext(interpreted);
     const reply = suggestions.length
       ? `${hadContext ? `I remembered your preferences (${remembered}). ` : ""}${relaxed ? "I don't have an exact use-case match, but these are the closest verified options" : `I found ${suggestions.length} verified option${suggestions.length === 1 ? "" : "s"}`}. Prices and stock were checked just now.`
@@ -192,28 +219,36 @@ export class CommerceService {
 
   getRecommendations(sessionId) {
     const session = this.#session(sessionId);
-    if (session.checkout || !session.items.length) return [];
+    if (session.checkout || (!session.items.length && !session.purchaseHistory.length)) return [];
     const cart = this.#cart(session);
-    const fingerprint = session.items.map(({ productId, quantity }) => `${productId}:${quantity}`).sort().join("|");
+    const fingerprint = `${session.items.map(({ productId, quantity }) => `${productId}:${quantity}`).sort().join("|")}::${session.purchaseHistory.slice().sort().join("|")}`;
     if (session.recommendationState.fingerprint === fingerprint) return clone(session.recommendationState.shown);
 
     const cartIds = new Set(session.items.map(({ productId }) => productId));
+    const excludedIds = new Set([...cartIds, ...session.purchaseHistory]);
     const cartProducts = session.items.map(({ productId }) => this.catalogue.get(productId));
+    const historyProducts = session.purchaseHistory.map((productId) => this.catalogue.get(productId));
     const remainingBudget = session.spendingLimit === undefined ? Number.POSITIVE_INFINITY : session.spendingLimit - cart.total;
     const recommendations = this.catalogue.list()
-      .filter((candidate) => !cartIds.has(candidate.id) && candidate.inventory > 0 && candidate.price <= remainingBudget)
+      .filter((candidate) => !excludedIds.has(candidate.id) && candidate.inventory > 0 && candidate.price <= remainingBudget)
       .map((candidate) => {
         const paired = cartProducts.filter((product) => product.complements.includes(candidate.id) || candidate.complements.includes(product.id));
-        if (!paired.length) return null;
+        const historicalPair = historyProducts.filter((product) => product.complements.includes(candidate.id) || candidate.complements.includes(product.id));
+        if (!paired.length && !historicalPair.length) return null;
         return {
           product: candidate,
-          reason: `Pairs with ${paired.map(({ name }) => name).join(" and ")} while staying within your spending limit.`,
+          reason: paired.length
+            ? `Pairs with ${paired.map(({ name }) => name).join(" and ")} in your cart while staying within your spending limit.`
+            : `Based on your past purchase of ${historicalPair.map(({ name }) => name).join(" and ")}, this is a compatible add-on within your spending limit.`,
+          sourcePriority: paired.length ? 0 : 1,
           projectedTotal: cart.total + candidate.price
         };
       })
       .filter(Boolean)
-      .sort((a, b) => a.product.price - b.product.price || a.product.name.localeCompare(b.product.name))
+      .sort((a, b) => a.sourcePriority - b.sourcePriority || a.product.price - b.product.price || a.product.name.localeCompare(b.product.name))
       .slice(0, 2);
+
+    recommendations.forEach((recommendation) => delete recommendation.sourcePriority);
 
     session.recommendationState = { fingerprint, shown: recommendations, decisions: {} };
     this.#recommendationMetrics.impressions += recommendations.length;
@@ -278,6 +313,7 @@ export class CommerceService {
       session.checkout.status = "paid";
       session.checkout.paymentId = paymentId;
       session.checkout.paidAt = new Date().toISOString();
+      session.purchaseHistory = [...new Set([...session.purchaseHistory, ...session.items.map(({ productId }) => productId)])];
       this.#record("payment.captured", { sessionId, orderId, paymentId });
     }
     return clone(session.checkout);

@@ -24,6 +24,8 @@ The backend uses real compiled LangGraph `StateGraph` workflows rather than fron
 
 The shopping workflow keeps structured, per-session conversational memory. Follow-ups such as “for daily use,” “make it a cream,” or “keep it under ₹1,000” update only that preference while retaining the earlier category and constraints. Remembered preferences are visible as chips on the customer page and are never shared between customer sessions.
 
+The customer store uses a two-column workspace: chat and verified agent suggestions on the left, with the guarded cart and explainable recommendations on the right. Natural requests such as “add this cream to cart” execute only when the previous suggestions identify exactly one product; ambiguous requests require the customer to choose by name. Recommendations use both current cart contents and recorded purchase history, and state which signal produced each suggestion.
+
 ## Run locally
 
 Requires Node.js 20 or newer. There are currently no third-party dependencies.
@@ -80,7 +82,7 @@ For local webhook testing, expose port 3000 through a secure tunnel and configur
 
 ## TDD acceptance contract
 
-Tests verify bounded intent parsing, authoritative inventory and pricing, exact-total approval, Razorpay order creation, Checkout option isolation, payment HMAC verification, session/order binding, signed webhooks, compatible recommendations, recommendation metrics, evidence-backed campaign opportunities, policy enforcement, human approval, lifecycle transitions, hard budget caps, measured ROAS, automatic stop-loss, API readiness, and malformed-input handling.
+Tests verify bounded intent parsing, conversational cart commands and ambiguity handling, authoritative inventory and pricing, exact-total approval, Razorpay order creation, Checkout option isolation, payment HMAC verification, session/order binding, signed webhooks, cart- and purchase-history-based recommendations, recommendation metrics, evidence-backed campaign opportunities, policy enforcement, human approval, lifecycle transitions, hard budget caps, measured ROAS, automatic stop-loss, API readiness, and malformed-input handling.
 
 ## Current boundary
 

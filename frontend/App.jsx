@@ -46,7 +46,7 @@ function Cart({ session, busy, onRemove, onCheckout }) {
   const cart = session?.cart ?? { items: [], total: 0 };
   const checkout = session?.checkout;
   return (
-    <aside className="sticky top-5 rounded-2xl border border-white/10 bg-slate-900/90 p-5 shadow-2xl shadow-black/40 backdrop-blur">
+    <aside className="rounded-2xl border border-white/10 bg-slate-900/90 p-5 shadow-2xl shadow-black/40 backdrop-blur">
       <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-extrabold">Guarded cart</h2><span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-bold text-emerald-300">Limit {formatMoney(session?.spendingLimit ?? 0)}</span></div>
       {!cart.items.length ? <p className="py-8 text-center text-sm text-slate-500">Your cart is empty.</p> : (
         <div className="mt-5 space-y-4">
@@ -224,7 +224,9 @@ export default function App() {
     initialized.current = true;
     if (page !== "customer") return;
     search(filters);
-    api("/api/sessions", { method: "POST", body: JSON.stringify({ spendingLimit: 2000 }) }).then(setSession).catch((error) => setNotice(error.message));
+    api("/api/sessions", { method: "POST", body: JSON.stringify({ spendingLimit: 2000, purchaseHistory: ["cleanser-01"] }) })
+      .then(async (created) => { setSession(created); await loadRecommendations(created.id); })
+      .catch((error) => setNotice(error.message));
   }, [page, search]);
 
   async function sendMessage(event) {
@@ -236,6 +238,7 @@ export default function App() {
     try {
       const body = await api(`/api/sessions/${session.id}/messages`, { method: "POST", body: JSON.stringify({ message: userMessage }) });
       setConversation((current) => [...current, { role: "assistant", content: body.reply }]); setSuggestions(body.suggestions); setRememberedContext(body.interpreted);
+      if (body.action?.type === "cart.added") { await refreshSession(); await loadRecommendations(); }
     } catch (error) { setNotice(error.message); } finally { setBusy(false); }
   }
 
@@ -245,8 +248,8 @@ export default function App() {
     return current;
   }
 
-  async function loadRecommendations() {
-    const recommendationBody = await api(`/api/sessions/${session.id}/recommendations`);
+  async function loadRecommendations(targetSessionId = session.id) {
+    const recommendationBody = await api(`/api/sessions/${targetSessionId}/recommendations`);
     const metricBody = await api("/api/recommendations/metrics");
     setRecommendations(recommendationBody.recommendations);
     setMetrics(metricBody);
@@ -325,7 +328,7 @@ export default function App() {
         </header>
         {page === "merchant" && <AgentOperations />}
         {page === "customer" && notice && <div role="status" className="mb-5 rounded-xl border border-blue-400/20 bg-blue-400/10 px-4 py-3 text-sm text-blue-100">{notice}</div>}
-        {page === "customer" && <main className="grid gap-6 lg:grid-cols-[1fr_340px]">
+        {page === "customer" && <main className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-6">
             <section aria-labelledby="agent-heading" className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 shadow-2xl shadow-black/30 backdrop-blur">
               <div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><h2 id="agent-heading" className="font-extrabold">Shopping agent</h2><p className="text-xs text-slate-500">Bounded by a {formatMoney(session?.spendingLimit ?? 2000)} spending limit</p></div><span className="text-xs font-bold text-emerald-400">● Catalogue connected</span></div>
@@ -337,14 +340,16 @@ export default function App() {
               <form onSubmit={sendMessage} className="flex gap-3 border-t border-white/10 p-4"><label className="sr-only" htmlFor="agent-message">Shopping request</label><input id="agent-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="I need a skincare gift under ₹2,000" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-400" /><button disabled={!session || busy} className="rounded-xl bg-blue-600 px-5 font-extrabold transition hover:bg-blue-500 disabled:opacity-50">{busy ? "Working…" : "Ask agent"}</button></form>
             </section>
             {suggestions.length > 0 && <section aria-labelledby="suggestions-heading"><div className="mb-4 flex items-center justify-between"><h2 id="suggestions-heading" className="text-xl font-extrabold">Agent suggestions</h2><span className="text-sm text-slate-500">Verified now</span></div><div className="grid gap-4 md:grid-cols-2">{suggestions.map((product) => <ProductCard key={product.id} product={product} onAdd={addToCart} />)}</div></section>}
-            <RecommendationPanel recommendations={recommendations} metrics={metrics} busy={busy} onDecision={decideRecommendation} />
             <details className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
               <summary className="cursor-pointer font-extrabold text-slate-200">Browse the authoritative catalogue</summary>
               <form onSubmit={(event) => { event.preventDefault(); search(filters); }} className="mt-5 grid items-end gap-4 md:grid-cols-[2fr_1fr_auto_auto]"><label className="grid gap-2 text-xs font-bold text-slate-400">Search<input name="query" value={filters.query} onChange={update} placeholder="e.g. skincare gift" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-base font-normal text-white outline-none" /></label><label className="grid gap-2 text-xs font-bold text-slate-400">Maximum price (₹)<input name="maxPrice" value={filters.maxPrice} onChange={update} type="number" min="0" placeholder="2000" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-base font-normal text-white outline-none" /></label><label className="flex min-h-12 items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-300"><input name="inStock" checked={filters.inStock} onChange={update} type="checkbox" className="size-4 accent-blue-500" /> In stock</label><button className="min-h-12 rounded-xl border border-white/15 px-4 font-bold hover:bg-white/5">Search</button></form>
               <p className="pb-4 pt-6 text-sm text-slate-500">{status}</p><div className="grid gap-4 md:grid-cols-2">{products.map((product) => <ProductCard key={product.id} product={product} onAdd={addToCart} />)}</div>
             </details>
           </div>
-          <Cart session={session} busy={busy} onRemove={removeFromCart} onCheckout={checkout} />
+          <div className="space-y-5 lg:sticky lg:top-5 lg:self-start">
+            <Cart session={session} busy={busy} onRemove={removeFromCart} onCheckout={checkout} />
+            <RecommendationPanel recommendations={recommendations} metrics={metrics} busy={busy} onDecision={decideRecommendation} />
+          </div>
         </main>}
         {page === "merchant" && <CampaignControlCentre />}
         <footer className="flex flex-wrap justify-between gap-3 py-12 text-sm text-slate-600"><span>{page === "customer" ? "Verified catalogue · Guarded cart · Explainable recommendations" : "Observable LangGraph runs · Human approval · Automatic stop-loss"}</span><span>{page === "customer" ? "Razorpay test mode" : "Simulated campaign delivery"}</span></footer>
