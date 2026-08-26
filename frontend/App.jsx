@@ -44,6 +44,27 @@ function ProductCard({ product, onAdd }) {
   );
 }
 
+function ChatProductCard({ product, onAdd, busy }) {
+  return (
+    <article className="mt-3 overflow-hidden rounded-xl border border-blue-300/20 bg-slate-950/80 text-left shadow-lg shadow-black/20">
+      <div className="flex items-start gap-3 p-3">
+        <div aria-hidden="true" className="grid size-14 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-500/25 via-violet-400/10 to-emerald-400/20 text-2xl text-blue-200">✦</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-[10px] font-black uppercase tracking-widest text-blue-300">Verified {product.category}</p><h3 className="mt-1 font-extrabold text-white">{product.name}</h3></div>
+            <strong className="whitespace-nowrap text-base text-blue-300">{formatMoney(product.price)}</strong>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-slate-400">{product.description}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-3 py-2.5">
+        <p className="text-[11px] text-slate-500"><span className="font-bold text-slate-300">{product.inventory}</span> in stock · ships in <span className="font-bold text-slate-300">{product.shippingDays} days</span></p>
+        <button disabled={busy} onClick={() => onAdd(product)} className="rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-950 transition hover:bg-blue-100 disabled:opacity-50">Add to cart</button>
+      </div>
+    </article>
+  );
+}
+
 function Cart({ session, busy, onRemove, onQuantity, onCheckout }) {
   const cart = session?.cart ?? { items: [], total: 0 };
   const checkout = session?.checkout;
@@ -257,7 +278,6 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [message, setMessage] = useState("I need a skincare gift under ₹2,000");
   const [conversation, setConversation] = useState([]);
-  const [suggestions, setSuggestions] = useState([]);
   const [rememberedContext, setRememberedContext] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [metrics, setMetrics] = useState({ impressions: 0, accepted: 0, rejected: 0, incrementalRevenue: 0, acceptanceRate: 0 });
@@ -300,7 +320,7 @@ export default function App() {
     setMessage(""); setBusy(true); setNotice("");
     try {
       const body = await api(`/api/sessions/${session.id}/messages`, { method: "POST", body: JSON.stringify({ message: userMessage }) });
-      setConversation((current) => [...current, { role: "assistant", content: body.reply }]); setSuggestions(body.suggestions); setRememberedContext(body.interpreted);
+      setConversation((current) => [...current, { role: "assistant", content: body.reply, suggestions: body.suggestions }]); setRememberedContext(body.interpreted);
       if (body.action?.type?.startsWith("cart.")) { await refreshSession(); await loadRecommendations(); }
     } catch (error) { setNotice(error.message); } finally { setBusy(false); }
   }
@@ -403,14 +423,20 @@ export default function App() {
               <div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><h2 id="agent-heading" className="font-extrabold">Shopping agent</h2><p className="text-xs text-slate-500">{customer?.name ?? "Customer"} · bounded by a {formatMoney(session?.spendingLimit ?? 2000)} limit</p></div><span className="text-xs font-bold text-emerald-400">● Catalogue connected</span></div>
               <div className="min-h-40 space-y-3 p-5">
                 {!conversation.length && <p className="max-w-lg rounded-2xl rounded-bl-sm bg-slate-800 px-4 py-3 text-sm leading-6 text-slate-300">Tell me what you need and your budget. I will only suggest verified, in-stock products.</p>}
-                {conversation.map((entry, index) => <p key={index} className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${entry.role === "user" ? "ml-auto rounded-br-sm bg-blue-600 text-white" : "rounded-bl-sm bg-slate-800 text-slate-300"}`}>{entry.content}</p>)}
+                {conversation.map((entry, index) => entry.role === "user" ? (
+                  <p key={index} className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-blue-600 px-4 py-3 text-sm leading-6 text-white">{entry.content}</p>
+                ) : (
+                  <div key={index} className="max-w-[92%] rounded-2xl rounded-bl-sm bg-slate-800 px-4 py-3 text-sm leading-6 text-slate-300">
+                    <p>{entry.content}</p>
+                    {entry.suggestions?.length > 0 && <div className="mt-3 border-t border-white/10 pt-1" aria-label="Agent suggestions">{entry.suggestions.map((product) => <ChatProductCard key={product.id} product={product} onAdd={addToCart} busy={busy} />)}</div>}
+                  </div>
+                ))}
                 {busy && <p className="w-fit rounded-2xl rounded-bl-sm bg-slate-800 px-4 py-3 text-sm text-slate-400">Agents are checking catalogue, stock and guardrails…</p>}
               </div>
               {rememberedContext && <div aria-label="Remembered preferences" className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-cyan-400/5 px-4 py-3"><span className="text-xs font-black text-cyan-300">REMEMBERING</span>{rememberedContext.category && <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">{rememberedContext.category}</span>}{rememberedContext.productType && <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">{rememberedContext.productType}</span>}{rememberedContext.useCase && <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">{rememberedContext.useCase.replace("-", " ")}</span>}{rememberedContext.maxPrice && <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-slate-300">under {formatMoney(rememberedContext.maxPrice)}</span>}</div>}
               <div className="flex flex-wrap gap-2 border-t border-white/10 px-4 pt-3">{["Show me something cheaper","Add the first product","Remove the item","Make quantity 2"].map((prompt) => <button key={prompt} onClick={() => setMessage(prompt)} className="rounded-full bg-white/5 px-3 py-1.5 text-xs text-slate-400 hover:text-white">{prompt}</button>)}</div><form onSubmit={sendMessage} className="flex gap-3 p-4"><label className="sr-only" htmlFor="agent-message">Shopping request</label><input id="agent-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="I need a skincare gift under ₹2,000" className="min-w-0 flex-1 rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none placeholder:text-slate-600 focus:border-blue-400" /><button disabled={!session || busy} className="rounded-xl bg-blue-600 px-5 font-extrabold transition hover:bg-blue-500 disabled:opacity-50">{busy ? "Working…" : "Ask agent"}</button></form>
             </section>
             <AgentTrace />
-            {suggestions.length > 0 && <section aria-labelledby="suggestions-heading"><div className="mb-4 flex items-center justify-between"><h2 id="suggestions-heading" className="text-xl font-extrabold">Agent suggestions</h2><span className="text-sm text-slate-500">Verified now</span></div><div className="grid gap-4 md:grid-cols-2">{suggestions.map((product) => <ProductCard key={product.id} product={product} onAdd={addToCart} />)}</div></section>}
             <details className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
               <summary className="cursor-pointer font-extrabold text-slate-200">Browse the authoritative catalogue</summary>
               <form onSubmit={(event) => { event.preventDefault(); search(filters); }} className="mt-5 grid items-end gap-4 md:grid-cols-[2fr_1fr_auto_auto]"><label className="grid gap-2 text-xs font-bold text-slate-400">Search<input name="query" value={filters.query} onChange={update} placeholder="e.g. skincare gift" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-base font-normal text-white outline-none" /></label><label className="grid gap-2 text-xs font-bold text-slate-400">Maximum price (₹)<input name="maxPrice" value={filters.maxPrice} onChange={update} type="number" min="0" placeholder="2000" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-base font-normal text-white outline-none" /></label><label className="flex min-h-12 items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-300"><input name="inStock" checked={filters.inStock} onChange={update} type="checkbox" className="size-4 accent-blue-500" /> In stock</label><button className="min-h-12 rounded-xl border border-white/15 px-4 font-bold hover:bg-white/5">Search</button></form>
